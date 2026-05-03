@@ -28,16 +28,17 @@ swift run -c release vectura-hnsw-benchmark
 | Contiguous vector buffer | 2.090 | n/a | 2.662 | 0.9920 |
 | Candidate-only benchmark split | 3.278 | 2.012 | 3.483 | 1.0000 |
 | Diversified neighbors + capped ground layer | 2.548 | 1.620 | 2.780 | 1.0000 |
-| 1.1 exact fallback + bounded topK heap | 2.123 | 1.430 | 1.441 | 1.0000 |
-| 1.2 Accelerate scoring + traversal reuse | 2.017 | 0.535 | 0.535 | 1.0000 |
-| 1.4 deterministic corpus + overflow-only reverse pruning | 2.324 | 0.576 | 0.682 | 1.0000 |
+| Exact fallback + bounded topK heap | 2.123 | 1.430 | 1.441 | 1.0000 |
+| Accelerate scoring + traversal reuse | 2.017 | 0.535 | 0.535 | 1.0000 |
+| Deterministic corpus + overflow-only reverse pruning | 2.324 | 0.576 | 0.682 | 1.0000 |
 
-The 1.1 row uses exact candidate fallback at 10K. Since that path already knows
-the exact topK, it returns only `topK` candidates for rescoring instead of the
-wider graph prefilter set. The 1.2 row keeps the same behavior but moves vector
-scoring to Accelerate and reuses traversal bookkeeping during graph construction.
-The 1.4 row uses a stable benchmark corpus and skips reverse-link pruning when
-the reverse edge does not overflow the layer budget.
+The exact fallback row uses exact candidate fallback at 10K. Since that path
+already knows the exact topK, it returns only `topK` candidates for rescoring
+instead of the wider graph prefilter set. The Accelerate row keeps the same
+behavior but moves vector scoring to Accelerate and reuses traversal bookkeeping
+during graph construction. The final row uses a stable benchmark corpus and
+skips reverse-link pruning when the reverse edge does not overflow the layer
+budget.
 
 ## Larger Corpus Presets
 
@@ -96,7 +97,7 @@ Diversified construction, a capped 32-neighbor ground layer, and wider query
 breadth improve 25K recall substantially. The tradeoff is slower graph
 construction and higher query latency than the speed preset.
 
-## Internet-Informed 1.3 Knobs
+## Internet-Informed Build Knobs
 
 The HNSW paper emphasizes the neighbor-selection heuristic for high-recall and
 clustered data. hnswlib and Faiss both keep a wider layer-0 graph than upper

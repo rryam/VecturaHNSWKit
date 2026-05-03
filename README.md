@@ -63,7 +63,7 @@ Add VecturaHNSWKit to your package:
 
 ```swift
 dependencies: [
-  .package(url: "https://github.com/rryam/VecturaHNSWKit.git", from: "1.4.0"),
+  .package(url: "https://github.com/rryam/VecturaHNSWKit.git", from: "1.0.0"),
 ]
 ```
 
