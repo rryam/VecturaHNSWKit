@@ -1,0 +1,24 @@
+{
+  "originHash" : "bd1b92bb211d9bcf4abed300c1606c4e8bfc4f13c3fc215b12f5c078140d56bd",
+  "pins" : [
+    {
+      "identity" : "swift-argument-parser",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-argument-parser.git",
+      "state" : {
+        "revision" : "626b5b7b2f45e1b0b1c6f4a309296d1d21d7311b",
+        "version" : "1.7.1"
+      }
+    },
+    {
+      "identity" : "vecturakit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/rryam/VecturaKit.git",
+      "state" : {
+        "revision" : "0259266d6975b551b9bb2b1a6202500129aa4a01",
+        "version" : "6.1.0"
+      }
+    }
+  ],
+  "version" : 3
+}
