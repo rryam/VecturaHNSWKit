@@ -10,6 +10,7 @@ public actor HNSWStorageProvider: IndexedVecturaStorage {
   public let snapshotURL: URL
   public let dimension: Int
   public let config: HNSWConfig
+  public let recoveryReport: HNSWRecoveryReport
 
   private let store: SQLiteDocumentStore
   private var index: HNSWIndex
@@ -18,7 +19,7 @@ public actor HNSWStorageProvider: IndexedVecturaStorage {
     directoryURL: URL,
     dimension: Int,
     config: HNSWConfig = .default,
-    loadPersistedIndex: Bool = true
+    recoveryPolicy: HNSWRecoveryPolicy = .validateSnapshotIfAvailable
   ) throws {
     guard dimension > 0 else {
       throw HNSWStorageError.invalidConfiguration("dimension must be greater than 0")
@@ -40,14 +41,12 @@ public actor HNSWStorageProvider: IndexedVecturaStorage {
     )
     self.index = try HNSWIndex(dimension: dimension, config: config)
 
-    if loadPersistedIndex, FileManager.default.fileExists(atPath: snapshotURL.path) {
-      let data = try Data(contentsOf: snapshotURL)
-      let snapshot = try PropertyListDecoder().decode(HNSWIndexSnapshot.self, from: data)
-      try index.restore(from: snapshot)
-    } else {
-      let documents = try store.loadActiveDocuments()
-      try index.rebuild(documents: documents)
-    }
+    self.recoveryReport = try Self.recoverIndex(
+      index: index,
+      store: store,
+      snapshotURL: snapshotURL,
+      policy: recoveryPolicy
+    )
   }
 
   public var stats: HNSWIndexStats {
@@ -83,6 +82,82 @@ public actor HNSWStorageProvider: IndexedVecturaStorage {
   public func compactIndex() async throws {
     try await rebuildIndex()
     try await saveIndexSnapshot()
+  }
+
+  private static func recoverIndex(
+    index: HNSWIndex,
+    store: SQLiteDocumentStore,
+    snapshotURL: URL,
+    policy: HNSWRecoveryPolicy
+  ) throws -> HNSWRecoveryReport {
+    switch policy {
+    case .rebuildFromDocuments:
+      let documents = try store.loadActiveDocuments()
+      try index.rebuild(documents: documents)
+      return HNSWRecoveryReport(
+        policy: policy,
+        loadedSnapshot: false,
+        rebuiltFromDocuments: true,
+        reason: "Recovery policy requested rebuild"
+      )
+
+    case .loadSnapshotIfAvailable:
+      guard FileManager.default.fileExists(atPath: snapshotURL.path) else {
+        let documents = try store.loadActiveDocuments()
+        try index.rebuild(documents: documents)
+        return HNSWRecoveryReport(
+          policy: policy,
+          loadedSnapshot: false,
+          rebuiltFromDocuments: true,
+          reason: "Snapshot not found"
+        )
+      }
+      try loadSnapshot(into: index, snapshotURL: snapshotURL)
+      return HNSWRecoveryReport(
+        policy: policy,
+        loadedSnapshot: true,
+        rebuiltFromDocuments: false,
+        reason: nil
+      )
+
+    case .validateSnapshotIfAvailable:
+      guard FileManager.default.fileExists(atPath: snapshotURL.path) else {
+        let documents = try store.loadActiveDocuments()
+        try index.rebuild(documents: documents)
+        return HNSWRecoveryReport(
+          policy: policy,
+          loadedSnapshot: false,
+          rebuiltFromDocuments: true,
+          reason: "Snapshot not found"
+        )
+      }
+
+      try loadSnapshot(into: index, snapshotURL: snapshotURL)
+      let documents = try store.loadActiveDocuments()
+      let activeIDs = Set(documents.map(\.id))
+      guard index.activeDocumentIDs == activeIDs else {
+        try index.rebuild(documents: documents)
+        return HNSWRecoveryReport(
+          policy: policy,
+          loadedSnapshot: true,
+          rebuiltFromDocuments: true,
+          reason: "Snapshot document IDs did not match SQLite"
+        )
+      }
+
+      return HNSWRecoveryReport(
+        policy: policy,
+        loadedSnapshot: true,
+        rebuiltFromDocuments: false,
+        reason: nil
+      )
+    }
+  }
+
+  private static func loadSnapshot(into index: HNSWIndex, snapshotURL: URL) throws {
+    let data = try Data(contentsOf: snapshotURL)
+    let snapshot = try PropertyListDecoder().decode(HNSWIndexSnapshot.self, from: data)
+    try index.restore(from: snapshot)
   }
 
   public func createStorageDirectoryIfNeeded() async throws {

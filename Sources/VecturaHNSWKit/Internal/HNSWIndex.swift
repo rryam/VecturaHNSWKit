@@ -56,6 +56,10 @@ final class HNSWIndex {
     )
   }
 
+  var activeDocumentIDs: Set<UUID> {
+    Set(activeDocumentNodes.keys)
+  }
+
   func rebuild(documents: [VecturaDocument]) throws {
     nodes.removeAll(keepingCapacity: true)
     activeDocumentNodes.removeAll(keepingCapacity: true)

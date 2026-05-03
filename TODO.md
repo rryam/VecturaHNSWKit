@@ -20,10 +20,10 @@
 
 ## 0.3
 
-- [ ] Add recovery policy.
-- [ ] Add index/document drift checks.
-- [ ] Add LumoKit-style usage example.
-- [ ] Commit 0.3.
+- [x] Add recovery policy.
+- [x] Add index/document drift checks.
+- [x] Add LumoKit-style usage example.
+- [x] Commit 0.3.
 
 ## 1.0
 

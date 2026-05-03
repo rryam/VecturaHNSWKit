@@ -32,7 +32,8 @@ import VecturaHNSWKit
 let storage = try HNSWStorageProvider(
   directoryURL: databaseURL,
   dimension: 384,
-  config: .default
+  config: .default,
+  recoveryPolicy: .validateSnapshotIfAvailable
 )
 
 let vectura = try await VecturaKit(
@@ -71,3 +72,23 @@ swift run -c release vectura-hnsw-benchmark
 
 The output includes search latency, recall@K against exact scan, insert time,
 snapshot write time, cold open time, and snapshot size.
+
+## Recovery
+
+`HNSWStorageProvider` stores documents in SQLite and stores the HNSW graph as an
+optional binary snapshot. The default recovery policy validates the snapshot
+against active SQLite documents and rebuilds the graph when the snapshot is
+stale.
+
+```swift
+let storage = try HNSWStorageProvider(
+  directoryURL: databaseURL,
+  dimension: 384,
+  recoveryPolicy: .validateSnapshotIfAvailable
+)
+
+let report = await storage.recoveryReport
+```
+
+Use `.loadSnapshotIfAvailable` when startup speed matters more than validation,
+or `.rebuildFromDocuments` when you want to ignore snapshots completely.

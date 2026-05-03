@@ -76,7 +76,8 @@ struct VecturaHNSWBenchmark {
           m: options.m,
           efConstruction: options.efConstruction,
           efSearch: options.efSearch
-        )
+        ),
+        recoveryPolicy: .loadSnapshotIfAvailable
       )
     }
 

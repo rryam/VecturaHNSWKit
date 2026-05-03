@@ -129,6 +129,35 @@ struct HNSWStorageProviderTests {
     #expect((afterCompact.snapshotBytes ?? 0) > 0)
   }
 
+  @Test("validated recovery rebuilds stale snapshot")
+  func validatedRecoveryRebuildsStaleSnapshot() async throws {
+    let directory = try temporaryDirectory()
+    let storage = try HNSWStorageProvider(directoryURL: directory, dimension: 3)
+    let apple = VecturaDocument(text: "apple", embedding: [1, 0, 0])
+    let banana = VecturaDocument(text: "banana", embedding: [0, 1, 0])
+
+    try await storage.saveDocument(apple)
+    try await storage.saveIndexSnapshot()
+    try await storage.saveDocument(banana)
+
+    let reopened = try HNSWStorageProvider(
+      directoryURL: directory,
+      dimension: 3,
+      recoveryPolicy: .validateSnapshotIfAvailable
+    )
+
+    let report = await reopened.recoveryReport
+    let candidates = try await reopened.searchVectorCandidates(
+      queryEmbedding: [0, 1, 0],
+      topK: 1,
+      prefilterSize: 2
+    )
+
+    #expect(report.loadedSnapshot == true)
+    #expect(report.rebuiltFromDocuments == true)
+    #expect(candidates?.first == banana.id)
+  }
+
   private func temporaryDirectory() throws -> URL {
     let url = FileManager.default.temporaryDirectory
       .appendingPathComponent("VecturaHNSWKitTests")
