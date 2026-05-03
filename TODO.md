@@ -27,7 +27,7 @@
 
 ## 1.0
 
-- [ ] Freeze public API names.
-- [ ] Add final benchmark docs.
-- [ ] Run full build, test, and benchmark pass.
-- [ ] Commit 1.0.
+- [x] Freeze public API names.
+- [x] Add final benchmark docs.
+- [x] Run full build, test, and benchmark pass.
+- [x] Commit 1.0.

@@ -66,7 +66,8 @@ struct VecturaHNSWBenchmark {
 
     let exactRun = try await measureSearch(engine: exact, queryVectors: queryVectors, topK: options.topK)
     let hnswRun = try await measureSearch(engine: hnsw, queryVectors: queryVectors, topK: options.topK)
-    let recall = averageRecall(exact: exactRun.ids, candidate: hnswRun.ids)
+    let recallAtOne = averageRecall(exact: exactRun.ids, candidate: hnswRun.ids, at: 1)
+    let recallAtK = averageRecall(exact: exactRun.ids, candidate: hnswRun.ids, at: options.topK)
 
     let coldOpen = try timedSync {
       _ = try HNSWStorageProvider(
@@ -98,7 +99,8 @@ struct VecturaHNSWBenchmark {
       | Plain VecturaKit exact scan | \(exactRun.timings.average.ms) | \(exactRun.timings.p50.ms) | \(exactRun.timings.p95.ms) | \(exactRun.timings.p99.ms) |
       | VecturaHNSWKit | \(hnswRun.timings.average.ms) | \(hnswRun.timings.p50.ms) | \(hnswRun.timings.p95.ms) | \(hnswRun.timings.p99.ms) |
 
-      recall@\(options.topK): \(String(format: "%.4f", recall))
+      recall@1: \(String(format: "%.4f", recallAtOne))
+      recall@\(options.topK): \(String(format: "%.4f", recallAtK))
       plain insert: \(exactInsert.ms) ms
       hnsw insert: \(hnswInsert.ms) ms
       snapshot write: \(snapshotTime.ms) ms
@@ -132,17 +134,17 @@ struct VecturaHNSWBenchmark {
     return (TimingSummary(values: timings), ids)
   }
 
-  private static func averageRecall(exact: [[UUID]], candidate: [[UUID]]) -> Double {
+  private static func averageRecall(exact: [[UUID]], candidate: [[UUID]], at k: Int) -> Double {
     guard !exact.isEmpty else {
       return 1
     }
 
     let total = zip(exact, candidate).reduce(0.0) { partial, pair in
-      let expected = Set(pair.0)
+      let expected = Set(pair.0.prefix(k))
       guard !expected.isEmpty else {
         return partial + 1
       }
-      let actual = Set(pair.1)
+      let actual = Set(pair.1.prefix(k))
       return partial + Double(expected.intersection(actual).count) / Double(expected.count)
     }
 

@@ -14,7 +14,7 @@ LumoKit              -> RAG pipeline above the database
 
 ## Status
 
-This repository is being built in milestone commits:
+Initial milestone commits:
 
 - `0.1`: SQLite document store plus in-memory HNSW candidate search.
 - `0.2`: persisted index snapshot, rebuild/compact APIs, and benchmarks.
@@ -22,6 +22,18 @@ This repository is being built in milestone commits:
 - `1.0`: stable public API and benchmark documentation.
 
 See [ROADMAP.md](ROADMAP.md) and [TODO.md](TODO.md).
+
+## Public API
+
+The 1.0 API surface is intentionally small:
+
+- `HNSWStorageProvider`
+- `HNSWConfig`
+- `HNSWMetric`
+- `HNSWIndexStats`
+- `HNSWRecoveryPolicy`
+- `HNSWRecoveryReport`
+- `VecturaHNSWKitVersion`
 
 ## Basic Usage
 
@@ -72,6 +84,9 @@ swift run -c release vectura-hnsw-benchmark
 
 The output includes search latency, recall@K against exact scan, insert time,
 snapshot write time, cold open time, and snapshot size.
+
+See [Benchmarks/README.md](Benchmarks/README.md) and
+[Benchmarks/RESULTS.md](Benchmarks/RESULTS.md).
 
 ## Recovery
 
