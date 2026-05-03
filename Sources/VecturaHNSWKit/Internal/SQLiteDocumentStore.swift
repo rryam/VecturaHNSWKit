@@ -6,6 +6,7 @@ private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self
 
 final class SQLiteDocumentStore {
   private var database: OpaquePointer?
+  private var cachedLoadDocumentByIDStatement: OpaquePointer?
   private let dimension: Int
 
   init(databaseURL: URL, dimension: Int) throws {
@@ -27,6 +28,7 @@ final class SQLiteDocumentStore {
   }
 
   deinit {
+    sqlite3_finalize(cachedLoadDocumentByIDStatement)
     sqlite3_close(database)
   }
 
@@ -90,17 +92,22 @@ final class SQLiteDocumentStore {
   }
 
   func loadDocument(id: UUID) throws -> VecturaDocument? {
-    try loadDocuments(
-      sql: """
-      SELECT id, text, embedding, created_at
-      FROM documents
-      WHERE active = 1 AND id = ?
-      LIMIT 1
-      """,
-      bind: { statement in
-        sqlite3_bind_text(statement, 1, id.uuidString, -1, sqliteTransient)
-      }
-    ).first
+    let statement = try loadDocumentByIDStatement()
+    defer {
+      sqlite3_reset(statement)
+      sqlite3_clear_bindings(statement)
+    }
+
+    sqlite3_bind_text(statement, 1, id.uuidString, -1, sqliteTransient)
+    let status = sqlite3_step(statement)
+    switch status {
+    case SQLITE_ROW:
+      return try decodeDocument(from: statement)
+    case SQLITE_DONE:
+      return nil
+    default:
+      throw HNSWStorageError.sqlite(Self.message(from: database))
+    }
   }
 
   func countActiveDocuments() throws -> Int {
@@ -248,6 +255,22 @@ final class SQLiteDocumentStore {
       throw HNSWStorageError.sqlite(Self.message(from: database))
     }
     return statement
+  }
+
+  private func loadDocumentByIDStatement() throws -> OpaquePointer? {
+    if let cachedLoadDocumentByIDStatement {
+      return cachedLoadDocumentByIDStatement
+    }
+
+    cachedLoadDocumentByIDStatement = try prepare(
+      """
+      SELECT id, text, embedding, created_at
+      FROM documents
+      WHERE active = 1 AND id = ?
+      LIMIT 1
+      """
+    )
+    return cachedLoadDocumentByIDStatement
   }
 
   private func execute(_ sql: String) throws {
