@@ -27,6 +27,7 @@ swift run -c release vectura-hnsw-benchmark
 | Reused SQLite lookup statement | 2.511 | n/a | 2.940 | 0.9880 |
 | Contiguous vector buffer | 2.090 | n/a | 2.662 | 0.9920 |
 | Candidate-only benchmark split | 3.278 | 2.012 | 3.483 | 1.0000 |
+| Diversified neighbors + capped ground layer | 2.548 | 1.620 | 2.780 | 1.0000 |
 
 The candidate-only row shows that the graph lookup can be faster than exact scan
 at this size, while full VecturaKit indexed search still pays for candidate
@@ -46,14 +47,14 @@ swift run -c release vectura-hnsw-benchmark
 
 | Engine | avg ms | p50 ms | p95 ms | p99 ms |
 | --- | ---: | ---: | ---: | ---: |
-| Plain VecturaKit exact scan | 7.850 | 8.009 | 8.681 | 9.633 |
-| VecturaHNSWKit candidates only | 0.521 | 0.485 | 0.710 | 0.714 |
-| VecturaHNSWKit | 1.011 | 1.000 | 1.167 | 1.240 |
+| Plain VecturaKit exact scan | 7.956 | 8.200 | 8.878 | 9.288 |
+| VecturaHNSWKit candidates only | 0.895 | 0.908 | 1.063 | 1.097 |
+| VecturaHNSWKit | 1.476 | 1.470 | 1.719 | 1.749 |
 
 ```text
-candidate recall@10: 0.6500
+candidate recall@10: 0.7900
 recall@1: 1.0000
-recall@10: 0.6500
+recall@10: 0.7900
 ```
 
 ### 25K Wider-Search Preset
@@ -69,16 +70,16 @@ swift run -c release vectura-hnsw-benchmark
 
 | Engine | avg ms | p50 ms | p95 ms | p99 ms |
 | --- | ---: | ---: | ---: | ---: |
-| Plain VecturaKit exact scan | 7.656 | 7.818 | 8.351 | 10.920 |
-| VecturaHNSWKit candidates only | 1.011 | 1.006 | 1.115 | 1.322 |
-| VecturaHNSWKit | 2.243 | 2.181 | 2.602 | 2.685 |
+| Plain VecturaKit exact scan | 7.908 | 8.177 | 8.707 | 9.449 |
+| VecturaHNSWKit candidates only | 1.731 | 1.730 | 1.966 | 2.131 |
+| VecturaHNSWKit | 3.013 | 3.109 | 3.252 | 3.373 |
 
 ```text
-candidate recall@10: 0.6450
-recall@1: 0.9500
-recall@10: 0.6450
+candidate recall@10: 0.8400
+recall@1: 1.0000
+recall@10: 0.8400
 ```
 
-The wider search did not recover recall at 25K, which suggests the next recall
-work should focus on graph construction and neighbor diversity, not only query
-search breadth.
+Diversified construction plus a capped 32-neighbor ground layer improved 25K
+recall substantially. The tradeoff is slower graph construction and a modest
+query-time increase from walking more ground-layer edges.

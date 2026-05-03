@@ -153,7 +153,12 @@ final class HNSWIndex {
           ef: config.efConstruction,
           layer: layer
         )
-        let selected = selectNeighbors(candidates: candidates, layer: layer)
+        let selected = selectNeighbors(
+          candidates: candidates,
+          layer: layer,
+          queryNodeID: nodeID,
+          maxCount: maxNeighbors(for: layer)
+        )
         connect(nodeID: nodeID, neighbors: selected, layer: layer)
         if let best = candidates.first {
           nearestEntry = best.id
@@ -291,18 +296,42 @@ final class HNSWIndex {
 
   private func selectNeighbors(
     candidates: [HNSWScoredNode],
-    layer: Int
+    layer: Int,
+    queryNodeID: Int,
+    maxCount: Int
   ) -> [Int] {
     var seen = Set<Int>()
+    var selectedIDs = Set<Int>()
     var selected: [Int] = []
-    selected.reserveCapacity(config.m)
+    var rejected: [Int] = []
+    selected.reserveCapacity(maxCount)
+    rejected.reserveCapacity(maxCount)
 
-    for candidate in candidates where nodes[candidate.id].level >= layer {
+    for candidate in candidates where isSelectableNeighbor(candidate.id, layer: layer, queryNodeID: queryNodeID) {
       guard seen.insert(candidate.id).inserted else {
         continue
       }
-      selected.append(candidate.id)
-      if selected.count == config.m {
+
+      if shouldSelectDiversifiedNeighbor(
+        candidateID: candidate.id,
+        candidateQueryScore: candidate.score,
+        selectedIDs: selected
+      ) {
+        selected.append(candidate.id)
+        selectedIDs.insert(candidate.id)
+      } else {
+        rejected.append(candidate.id)
+      }
+
+      if selected.count == maxCount {
+        return selected
+      }
+    }
+
+    for candidateID in rejected where !selectedIDs.contains(candidateID) {
+      selected.append(candidateID)
+      selectedIDs.insert(candidateID)
+      if selected.count == maxCount {
         break
       }
     }
@@ -325,11 +354,62 @@ final class HNSWIndex {
   }
 
   private func pruneNeighbors(of nodeID: Int, layer: Int) {
-    var unique = Array(Set(nodes[nodeID].neighborsByLayer[layer]))
-    unique.sort {
-      score(nodeID: nodeID, neighborID: $0) > score(nodeID: nodeID, neighborID: $1)
+    var seen = Set<Int>()
+    var candidates: [HNSWScoredNode] = []
+    candidates.reserveCapacity(nodes[nodeID].neighborsByLayer[layer].count)
+
+    for neighborID in nodes[nodeID].neighborsByLayer[layer] where isSelectableNeighbor(
+      neighborID,
+      layer: layer,
+      queryNodeID: nodeID
+    ) {
+      guard seen.insert(neighborID).inserted else {
+        continue
+      }
+      candidates.append(
+        HNSWScoredNode(
+          id: neighborID,
+          score: score(nodeID: nodeID, neighborID: neighborID)
+        )
+      )
     }
-    nodes[nodeID].neighborsByLayer[layer] = Array(unique.prefix(config.m))
+
+    candidates.sort { $0.score > $1.score }
+    nodes[nodeID].neighborsByLayer[layer] = selectNeighbors(
+      candidates: candidates,
+      layer: layer,
+      queryNodeID: nodeID,
+      maxCount: maxNeighbors(for: layer)
+    )
+  }
+
+  private func maxNeighbors(for layer: Int) -> Int {
+    layer == 0 ? max(config.m, min(config.m * 2, 32)) : config.m
+  }
+
+  private func isSelectableNeighbor(_ nodeID: Int, layer: Int, queryNodeID: Int) -> Bool {
+    guard nodeID != queryNodeID,
+          nodes.indices.contains(nodeID),
+          nodes[nodeID].neighborsByLayer.indices.contains(layer),
+          nodes[nodeID].level >= layer,
+          !nodes[nodeID].isDeleted else {
+      return false
+    }
+    return true
+  }
+
+  private func shouldSelectDiversifiedNeighbor(
+    candidateID: Int,
+    candidateQueryScore: Float,
+    selectedIDs: [Int]
+  ) -> Bool {
+    for selectedID in selectedIDs {
+      let candidateToSelectedScore = score(nodeID: candidateID, neighborID: selectedID)
+      if candidateToSelectedScore >= candidateQueryScore {
+        return false
+      }
+    }
+    return true
   }
 
   private func neighbors(of nodeID: Int, layer: Int) -> [Int] {

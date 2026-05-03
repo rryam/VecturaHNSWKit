@@ -1,6 +1,9 @@
 /// Configuration for the HNSW graph.
 public struct HNSWConfig: Codable, Equatable, Sendable {
-  /// Maximum number of graph neighbors retained per node per layer.
+  /// Maximum number of graph neighbors retained per node on upper layers.
+  ///
+  /// The ground layer keeps a wider capped neighbor budget to improve recall:
+  /// `min(m * 2, 32)`, but never less than `m`.
   public var m: Int
 
   /// Candidate breadth used while inserting vectors.

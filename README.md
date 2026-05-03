@@ -126,8 +126,8 @@ let hnswConfig = try HNSWConfig(
 
 The important knobs:
 
-- `m`: maximum graph neighbors per node. Higher values usually improve recall
-  and memory use.
+- `m`: upper-layer graph neighbors per node. The ground layer keeps a wider
+  capped budget of `min(m * 2, 32)`, but never less than `m`.
 - `efConstruction`: insert-time search breadth. Higher values build a better
   graph but slow ingestion.
 - `efSearch`: query-time search breadth. Higher values improve recall but slow
@@ -207,18 +207,19 @@ swift run -c release vectura-hnsw-benchmark
 Local 25K x 384D speed preset:
 
 ```text
-Plain VecturaKit exact scan avg: 7.850 ms
-VecturaHNSWKit candidates only avg: 0.521 ms
-VecturaHNSWKit full avg: 1.011 ms
-recall@10: 0.6500
+Plain VecturaKit exact scan avg: 7.956 ms
+VecturaHNSWKit candidates only avg: 0.895 ms
+VecturaHNSWKit full avg: 1.476 ms
+recall@10: 0.7900
 ```
 
 Local 10K x 384D high-recall preset after optimization:
 
 ```text
-Plain VecturaKit exact scan avg: 2.090 ms
-VecturaHNSWKit full avg: 2.662 ms
-recall@10: 0.9920
+Plain VecturaKit exact scan avg: 2.548 ms
+VecturaHNSWKit candidates only avg: 1.620 ms
+VecturaHNSWKit full avg: 2.780 ms
+recall@10: 1.0000
 ```
 
 The current story is honest: HNSW can dramatically reduce latency at larger

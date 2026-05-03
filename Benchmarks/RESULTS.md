@@ -111,15 +111,16 @@ Result:
 
 | Engine | avg ms | p50 ms | p95 ms | p99 ms |
 | --- | ---: | ---: | ---: | ---: |
-| Plain VecturaKit exact scan | 2.963 | 2.658 | 4.570 | 4.786 |
-| VecturaHNSWKit | 5.414 | 5.368 | 6.355 | 6.602 |
+| Plain VecturaKit exact scan | 2.548 | 2.609 | 2.981 | 3.686 |
+| VecturaHNSWKit candidates only | 1.620 | 1.631 | 1.801 | 2.112 |
+| VecturaHNSWKit | 2.780 | 2.746 | 3.211 | 3.251 |
 
 Recall:
 
 ```text
 recall@1: 1.0000
-recall@10: 0.9960
+recall@10: 1.0000
 ```
 
-This preset favors recall. HNSW reaches near-exact recall, but exact scan is
-still faster at 10K for this corpus and pure Swift HNSW implementation.
+This preset favors recall. HNSW reaches exact recall for this local query set,
+while the full indexed path remains slightly slower than exact scan at 10K.
