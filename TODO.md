@@ -48,3 +48,11 @@
 - [x] Reserve graph capacity before batch inserts.
 - [x] Remove closure-based heap comparison from the hot path.
 - [x] Re-run ingestion-focused release benchmarks.
+
+## 1.3
+
+- [x] Research HNSW paper, hnswlib, Faiss, and insertion-order findings.
+- [x] Add explicit ground-layer neighbor tuning.
+- [x] Keep safe capped ground-layer behavior by default.
+- [x] Add optional deterministic batch insertion shuffling.
+- [x] Benchmark default, high-recall, uncapped, and seeded-order variants.

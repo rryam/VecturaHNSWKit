@@ -63,7 +63,7 @@ Add VecturaHNSWKit to your package:
 
 ```swift
 dependencies: [
-  .package(url: "https://github.com/rryam/VecturaHNSWKit.git", from: "1.2.0"),
+  .package(url: "https://github.com/rryam/VecturaHNSWKit.git", from: "1.3.0"),
 ]
 ```
 
@@ -121,18 +121,26 @@ storage backend that can answer `searchVectorCandidates(...)` quickly.
 ```swift
 let hnswConfig = try HNSWConfig(
   m: 16,
+  level0NeighborMultiplier: 2,
+  level0NeighborCap: 32,
   efConstruction: 200,
   efSearch: 128,
   exactSearchThreshold: 10_000,
   automaticCompactionDeletedRatio: 0.30,
-  automaticCompactionMinimumDeletedCount: 1_000
+  automaticCompactionMinimumDeletedCount: 1_000,
+  batchInsertionSeed: nil
 )
 ```
 
 The important knobs:
 
 - `m`: upper-layer graph neighbors per node. The ground layer keeps a wider
-  capped budget of `min(m * 2, 32)`, but never less than `m`.
+  budget controlled by `level0NeighborMultiplier` and `level0NeighborCap`.
+- `level0NeighborMultiplier`: multiplier for the ground-layer neighbor budget.
+  The default `2` matches common HNSW practice for a wider base layer.
+- `level0NeighborCap`: cap for the ground-layer budget. The default `32`
+  preserves fast ingestion; set it to `0` to allow uncapped `m *
+  level0NeighborMultiplier` when you explicitly want a heavier recall build.
 - `efConstruction`: insert-time search breadth. Higher values build a better
   graph but slow ingestion.
 - `efSearch`: query-time search breadth. Higher values improve recall but slow
@@ -144,6 +152,9 @@ The important knobs:
   graph compaction.
 - `automaticCompactionMinimumDeletedCount`: minimum tombstone count before
   automatic compaction can run.
+- `batchInsertionSeed`: optional deterministic shuffle seed for bulk inserts.
+  Use it when the input is sorted or clustered and you want to reduce
+  insertion-order sensitivity.
 - `candidateMultiplier`: VecturaKit indexed-mode multiplier. Graph search uses
   it to return `topK * candidateMultiplier` candidates for exact rescoring;
   exact fallback returns `topK` because it has already selected exact neighbors.
@@ -158,6 +169,19 @@ For higher recall, try:
 
 ```swift
 HNSWConfig(m: 32, efConstruction: 400, efSearch: 400)
+```
+
+For a heavier recall-oriented build that follows the uncapped `2 * m`
+ground-layer shape used by mature HNSW implementations:
+
+```swift
+HNSWConfig(
+  m: 32,
+  level0NeighborMultiplier: 2,
+  level0NeighborCap: 0,
+  efConstruction: 400,
+  efSearch: 400
+)
 ```
 
 ## Persistence And Recovery

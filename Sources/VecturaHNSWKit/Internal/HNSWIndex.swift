@@ -126,7 +126,7 @@ final class HNSWIndex {
     rng = SeededGenerator(seed: config.randomSeed)
     reserveCapacity(additionalNodeCount: documents.count)
 
-    for document in documents {
+    for document in orderedForBatchInsertion(documents) {
       try add(documentID: document.id, vector: document.embedding)
     }
   }
@@ -485,7 +485,29 @@ final class HNSWIndex {
   }
 
   private func maxNeighbors(for layer: Int) -> Int {
-    layer == 0 ? max(config.m, min(config.m * 2, 32)) : config.m
+    guard layer == 0 else {
+      return config.m
+    }
+
+    let scaled = config.m * config.level0NeighborMultiplier
+    guard config.level0NeighborCap > 0 else {
+      return max(config.m, scaled)
+    }
+    return max(config.m, min(scaled, config.level0NeighborCap))
+  }
+
+  func orderedForBatchInsertion(_ documents: [VecturaDocument]) -> [VecturaDocument] {
+    guard let seed = config.batchInsertionSeed, documents.count > 1 else {
+      return documents
+    }
+
+    var ordered = documents
+    var generator = SeededGenerator(seed: seed)
+    for index in stride(from: ordered.count - 1, through: 1, by: -1) {
+      let swapIndex = Int(generator.next() % UInt64(index + 1))
+      ordered.swapAt(index, swapIndex)
+    }
+    return ordered
   }
 
   private func isSelectableNeighbor(_ nodeID: Int, layer: Int, queryNodeID: Int) -> Bool {

@@ -46,9 +46,12 @@ struct VecturaHNSWBenchmark {
       dimension: options.dimension,
       config: try HNSWConfig(
         m: options.m,
+        level0NeighborMultiplier: options.level0NeighborMultiplier,
+        level0NeighborCap: options.level0NeighborCap,
         efConstruction: options.efConstruction,
         efSearch: options.efSearch,
-        exactSearchThreshold: options.exactSearchThreshold
+        exactSearchThreshold: options.exactSearchThreshold,
+        batchInsertionSeed: options.batchInsertionSeed
       )
     )
 
@@ -87,9 +90,12 @@ struct VecturaHNSWBenchmark {
         dimension: options.dimension,
         config: try HNSWConfig(
           m: options.m,
+          level0NeighborMultiplier: options.level0NeighborMultiplier,
+          level0NeighborCap: options.level0NeighborCap,
           efConstruction: options.efConstruction,
           efSearch: options.efSearch,
-          exactSearchThreshold: options.exactSearchThreshold
+          exactSearchThreshold: options.exactSearchThreshold,
+          batchInsertionSeed: options.batchInsertionSeed
         ),
         recoveryPolicy: .loadSnapshotIfAvailable
       )
@@ -107,6 +113,9 @@ struct VecturaHNSWBenchmark {
       topK: \(options.topK)
       candidateMultiplier: \(options.candidateMultiplier)
       exactSearchThreshold: \(options.exactSearchThreshold)
+      level0NeighborMultiplier: \(options.level0NeighborMultiplier)
+      level0NeighborCap: \(options.level0NeighborCap)
+      batchInsertionSeed: \(options.batchInsertionSeed.map(String.init) ?? "nil")
 
       | Engine | avg ms | p50 ms | p95 ms | p99 ms |
       | --- | ---: | ---: | ---: | ---: |
@@ -236,9 +245,12 @@ struct BenchmarkOptions {
   let topK: Int
   let candidateMultiplier: Int
   let m: Int
+  let level0NeighborMultiplier: Int
+  let level0NeighborCap: Int
   let efConstruction: Int
   let efSearch: Int
   let exactSearchThreshold: Int
+  let batchInsertionSeed: UInt64?
 
   static func fromEnvironment() -> BenchmarkOptions {
     let environment = ProcessInfo.processInfo.environment
@@ -249,9 +261,12 @@ struct BenchmarkOptions {
       topK: environment.integer("VECTURA_HNSW_BENCH_TOPK", default: 10),
       candidateMultiplier: environment.integer("VECTURA_HNSW_BENCH_CANDIDATE_MULTIPLIER", default: 8),
       m: environment.integer("VECTURA_HNSW_BENCH_M", default: 16),
+      level0NeighborMultiplier: environment.integer("VECTURA_HNSW_BENCH_LEVEL0_MULTIPLIER", default: 2),
+      level0NeighborCap: environment.integer("VECTURA_HNSW_BENCH_LEVEL0_CAP", default: 32),
       efConstruction: environment.integer("VECTURA_HNSW_BENCH_EF_CONSTRUCTION", default: 200),
       efSearch: environment.integer("VECTURA_HNSW_BENCH_EF_SEARCH", default: 128),
-      exactSearchThreshold: environment.integer("VECTURA_HNSW_BENCH_EXACT_THRESHOLD", default: 10_000)
+      exactSearchThreshold: environment.integer("VECTURA_HNSW_BENCH_EXACT_THRESHOLD", default: 10_000),
+      batchInsertionSeed: environment.optionalUInt64("VECTURA_HNSW_BENCH_BATCH_INSERTION_SEED")
     )
   }
 }
@@ -340,5 +355,9 @@ extension TimeInterval {
 extension Dictionary where Key == String, Value == String {
   func integer(_ key: String, default defaultValue: Int) -> Int {
     self[key].flatMap(Int.init) ?? defaultValue
+  }
+
+  func optionalUInt64(_ key: String) -> UInt64? {
+    self[key].flatMap(UInt64.init)
   }
 }

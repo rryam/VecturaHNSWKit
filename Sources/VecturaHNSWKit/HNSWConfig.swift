@@ -2,9 +2,19 @@
 public struct HNSWConfig: Codable, Equatable, Sendable {
   /// Maximum number of graph neighbors retained per node on upper layers.
   ///
-  /// The ground layer keeps a wider capped neighbor budget to improve recall:
-  /// `min(m * 2, 32)`, but never less than `m`.
+  /// The ground layer keeps a wider neighbor budget controlled by
+  /// `level0NeighborMultiplier`, but never less than `m`.
   public var m: Int
+
+  /// Multiplier for the ground-layer neighbor budget.
+  ///
+  /// Mature HNSW implementations commonly keep a wider layer-0 graph than upper layers.
+  public var level0NeighborMultiplier: Int
+
+  /// Optional cap for the ground-layer neighbor budget.
+  ///
+  /// Set to `0` to disable the cap and use `m * level0NeighborMultiplier`.
+  public var level0NeighborCap: Int
 
   /// Candidate breadth used while inserting vectors.
   public var efConstruction: Int
@@ -32,10 +42,18 @@ public struct HNSWConfig: Codable, Equatable, Sendable {
   /// Minimum deleted-node count required before automatic compaction runs.
   public var automaticCompactionMinimumDeletedCount: Int
 
+  /// Optional seed for deterministic batch insertion shuffling.
+  ///
+  /// Leave `nil` to preserve caller order. Set a seed when bulk-building from
+  /// sorted or clustered data to reduce insertion-order sensitivity.
+  public var batchInsertionSeed: UInt64?
+
   public static let `default` = try! HNSWConfig()
 
   enum CodingKeys: String, CodingKey {
     case m
+    case level0NeighborMultiplier
+    case level0NeighborCap
     case efConstruction
     case efSearch
     case randomSeed
@@ -43,20 +61,30 @@ public struct HNSWConfig: Codable, Equatable, Sendable {
     case exactSearchThreshold
     case automaticCompactionDeletedRatio
     case automaticCompactionMinimumDeletedCount
+    case batchInsertionSeed
   }
 
   public init(
     m: Int = 16,
+    level0NeighborMultiplier: Int = 2,
+    level0NeighborCap: Int = 32,
     efConstruction: Int = 200,
     efSearch: Int = 64,
     randomSeed: UInt64 = 0x5645_4354_5552_4148,
     metric: HNSWMetric = .cosine,
     exactSearchThreshold: Int = 10_000,
     automaticCompactionDeletedRatio: Double = 0.30,
-    automaticCompactionMinimumDeletedCount: Int = 1_000
+    automaticCompactionMinimumDeletedCount: Int = 1_000,
+    batchInsertionSeed: UInt64? = nil
   ) throws {
     guard m > 0 else {
       throw HNSWStorageError.invalidConfiguration("m must be greater than 0")
+    }
+    guard level0NeighborMultiplier > 0 else {
+      throw HNSWStorageError.invalidConfiguration("level0NeighborMultiplier must be greater than 0")
+    }
+    guard level0NeighborCap >= 0 else {
+      throw HNSWStorageError.invalidConfiguration("level0NeighborCap must be greater than or equal to 0")
     }
     guard efConstruction >= m else {
       throw HNSWStorageError.invalidConfiguration("efConstruction must be greater than or equal to m")
@@ -79,6 +107,8 @@ public struct HNSWConfig: Codable, Equatable, Sendable {
     }
 
     self.m = m
+    self.level0NeighborMultiplier = level0NeighborMultiplier
+    self.level0NeighborCap = level0NeighborCap
     self.efConstruction = efConstruction
     self.efSearch = efSearch
     self.randomSeed = randomSeed
@@ -86,12 +116,18 @@ public struct HNSWConfig: Codable, Equatable, Sendable {
     self.exactSearchThreshold = exactSearchThreshold
     self.automaticCompactionDeletedRatio = automaticCompactionDeletedRatio
     self.automaticCompactionMinimumDeletedCount = automaticCompactionMinimumDeletedCount
+    self.batchInsertionSeed = batchInsertionSeed
   }
 
   public init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     try self.init(
       m: try container.decode(Int.self, forKey: .m),
+      level0NeighborMultiplier: try container.decodeIfPresent(
+        Int.self,
+        forKey: .level0NeighborMultiplier
+      ) ?? 2,
+      level0NeighborCap: try container.decodeIfPresent(Int.self, forKey: .level0NeighborCap) ?? 32,
       efConstruction: try container.decode(Int.self, forKey: .efConstruction),
       efSearch: try container.decode(Int.self, forKey: .efSearch),
       randomSeed: try container.decode(UInt64.self, forKey: .randomSeed),
@@ -104,7 +140,8 @@ public struct HNSWConfig: Codable, Equatable, Sendable {
       automaticCompactionMinimumDeletedCount: try container.decodeIfPresent(
         Int.self,
         forKey: .automaticCompactionMinimumDeletedCount
-      ) ?? 1_000
+      ) ?? 1_000,
+      batchInsertionSeed: try container.decodeIfPresent(UInt64.self, forKey: .batchInsertionSeed)
     )
   }
 }

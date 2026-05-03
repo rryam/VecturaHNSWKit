@@ -240,6 +240,53 @@ struct HNSWStorageProviderTests {
     #expect(candidates?.first == banana.id)
   }
 
+  @Test("config decodes missing new fields with production defaults")
+  func configDecodesMissingNewFieldsWithProductionDefaults() throws {
+    let data = Data(
+      """
+      {
+        "m": 16,
+        "efConstruction": 200,
+        "efSearch": 64,
+        "randomSeed": 6216727343042806088,
+        "metric": "cosine"
+      }
+      """.utf8
+    )
+
+    let config = try JSONDecoder().decode(HNSWConfig.self, from: data)
+
+    #expect(config.level0NeighborMultiplier == 2)
+    #expect(config.level0NeighborCap == 32)
+    #expect(config.exactSearchThreshold == 10_000)
+    #expect(config.automaticCompactionDeletedRatio == 0.30)
+    #expect(config.automaticCompactionMinimumDeletedCount == 1_000)
+    #expect(config.batchInsertionSeed == nil)
+  }
+
+  @Test("batch insertion seed preserves stored documents")
+  func batchInsertionSeedPreservesStoredDocuments() async throws {
+    let directory = try temporaryDirectory()
+    let config = try HNSWConfig(batchInsertionSeed: 42)
+    let storage = try HNSWStorageProvider(directoryURL: directory, dimension: 3, config: config)
+    let documents = [
+      VecturaDocument(text: "apple", embedding: [1, 0, 0]),
+      VecturaDocument(text: "banana", embedding: [0, 1, 0]),
+      VecturaDocument(text: "car", embedding: [0, 0, 1]),
+    ]
+
+    try await storage.saveDocuments(documents)
+    let loaded = try await storage.loadDocuments()
+    let candidates = try await storage.searchVectorCandidates(
+      queryEmbedding: [1, 0, 0],
+      topK: 1,
+      prefilterSize: 2
+    )
+
+    #expect(Set(loaded.map(\.id)) == Set(documents.map(\.id)))
+    #expect(candidates?.first == documents[0].id)
+  }
+
   private func temporaryDirectory() throws -> URL {
     let url = FileManager.default.temporaryDirectory
       .appendingPathComponent("VecturaHNSWKitTests")

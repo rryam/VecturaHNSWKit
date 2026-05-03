@@ -201,7 +201,7 @@ public actor HNSWStorageProvider: IndexedVecturaStorage {
     try store.saveDocuments(documents)
     do {
       index.reserveCapacity(additionalNodeCount: documents.count)
-      for document in documents {
+      for document in index.orderedForBatchInsertion(documents) {
         try index.add(documentID: document.id, vector: document.embedding)
       }
       try await compactIndexIfNeeded()

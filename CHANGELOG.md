@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.0
+
+- Adds `level0NeighborMultiplier` and `level0NeighborCap` for explicit ground-layer tuning.
+- Preserves the 32-neighbor level-0 cap by default to avoid accidental ingestion regressions.
+- Adds optional deterministic batch insertion shuffling through `batchInsertionSeed`.
+- Extends the benchmark executable with level-0 and batch-ordering environment controls.
+- Adds backward-decoding coverage for new `HNSWConfig` fields.
+
 ## 1.2.0
 
 - Moves HNSW vector scoring to Accelerate-backed dot products.

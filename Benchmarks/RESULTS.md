@@ -28,6 +28,9 @@ queries: 25
 topK: 10
 candidateMultiplier: 8
 exactSearchThreshold: 10000
+level0NeighborMultiplier: 2
+level0NeighborCap: 32
+batchInsertionSeed: nil
 ```
 
 Result:
@@ -71,6 +74,9 @@ queries: 25
 topK: 10
 candidateMultiplier: 8
 exactSearchThreshold: 10000
+level0NeighborMultiplier: 2
+level0NeighborCap: 32
+batchInsertionSeed: nil
 ```
 
 Result:
@@ -118,6 +124,9 @@ queries: 25
 topK: 10
 candidateMultiplier: 20
 exactSearchThreshold: 10000
+level0NeighborMultiplier: 2
+level0NeighborCap: 32
+batchInsertionSeed: nil
 ```
 
 Result:
@@ -163,6 +172,9 @@ queries: 20
 topK: 10
 candidateMultiplier: 8
 exactSearchThreshold: 10000
+level0NeighborMultiplier: 2
+level0NeighborCap: 32
+batchInsertionSeed: nil
 ```
 
 Result:
@@ -210,6 +222,9 @@ queries: 20
 topK: 10
 candidateMultiplier: 20
 exactSearchThreshold: 10000
+level0NeighborMultiplier: 2
+level0NeighborCap: 32
+batchInsertionSeed: nil
 ```
 
 Result:

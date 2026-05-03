@@ -16,9 +16,12 @@ Environment options:
 | `VECTURA_HNSW_BENCH_TOPK` | `10` | Requested result count |
 | `VECTURA_HNSW_BENCH_CANDIDATE_MULTIPLIER` | `8` | HNSW prefilter multiplier |
 | `VECTURA_HNSW_BENCH_M` | `16` | HNSW neighbor count |
+| `VECTURA_HNSW_BENCH_LEVEL0_MULTIPLIER` | `2` | Ground-layer neighbor multiplier |
+| `VECTURA_HNSW_BENCH_LEVEL0_CAP` | `32` | Ground-layer neighbor cap; use `0` for uncapped |
 | `VECTURA_HNSW_BENCH_EF_CONSTRUCTION` | `200` | Insert-time search breadth |
 | `VECTURA_HNSW_BENCH_EF_SEARCH` | `128` | Query-time search breadth |
 | `VECTURA_HNSW_BENCH_EXACT_THRESHOLD` | `10000` | Document-count threshold for exact candidate fallback |
+| `VECTURA_HNSW_BENCH_BATCH_INSERTION_SEED` | unset | Optional deterministic batch insertion shuffle seed |
 
 The benchmark reports:
 

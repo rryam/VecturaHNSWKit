@@ -92,3 +92,38 @@ hnsw insert: 28058.457 ms
 Diversified construction, a capped 32-neighbor ground layer, and wider query
 breadth improve 25K recall substantially. The tradeoff is slower graph
 construction and higher query latency than the speed preset.
+
+## Internet-Informed 1.3 Knobs
+
+The HNSW paper emphasizes the neighbor-selection heuristic for high-recall and
+clustered data. hnswlib and Faiss both keep a wider layer-0 graph than upper
+layers. Recent HNSW research also shows insertion order can shift recall, so
+VecturaHNSWKit now exposes those as explicit build controls instead of hidden
+defaults.
+
+### Seeded Batch Insertion
+
+```sh
+VECTURA_HNSW_BENCH_DOCS=25000 \
+VECTURA_HNSW_BENCH_DIM=384 \
+VECTURA_HNSW_BENCH_QUERIES=20 \
+VECTURA_HNSW_BENCH_CANDIDATE_MULTIPLIER=8 \
+VECTURA_HNSW_BENCH_BATCH_INSERTION_SEED=42 \
+swift run -c release vectura-hnsw-benchmark
+```
+
+```text
+candidate recall@10: 0.8100
+recall@10: 0.8100
+hnsw insert: 22482.303 ms
+```
+
+This synthetic corpus only moved slightly. The knob is mainly for sorted or
+clustered bulk loads, where insertion order is known to matter.
+
+### Uncapped Level-0 Width
+
+For `m = 32`, disabling the default `level0NeighborCap` allows a 64-neighbor
+ground layer. On the 25K wider-search preset, this reached recall@10 `1.0000`
+locally, but insert time rose to `106846.854 ms`. That is why VecturaHNSWKit
+keeps the 32-neighbor cap by default and makes uncapped level-0 width explicit.
