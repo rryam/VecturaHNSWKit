@@ -249,43 +249,37 @@ final class HNSWIndex {
     layer: Int
   ) -> [HNSWScoredNode] {
     var visited = Set<Int>()
-    var candidates: [HNSWScoredNode] = []
-    var nearest: [HNSWScoredNode] = []
+    var candidates = HNSWScoredNodeHeap { $0.score > $1.score }
+    var nearest = HNSWScoredNodeHeap { $0.score < $1.score }
 
     for entryPoint in entryPoints {
       guard visited.insert(entryPoint).inserted else {
         continue
       }
       let scored = HNSWScoredNode(id: entryPoint, score: score(query: query, nodeID: entryPoint))
-      candidates.append(scored)
-      nearest.append(scored)
+      candidates.insert(scored)
+      nearest.insert(scored)
     }
 
-    candidates.sort { $0.score > $1.score }
-    nearest.sort { $0.score > $1.score }
-
-    while !candidates.isEmpty {
-      let current = candidates.removeFirst()
-      if nearest.count >= ef, let worst = nearest.last, current.score < worst.score {
+    while let current = candidates.popRoot() {
+      if nearest.count >= ef, let worst = nearest.peek, current.score < worst.score {
         break
       }
 
       for neighborID in neighbors(of: current.id, layer: layer) where visited.insert(neighborID).inserted {
         let scored = HNSWScoredNode(id: neighborID, score: score(query: query, nodeID: neighborID))
-        if nearest.count < ef || scored.score > (nearest.last?.score ?? -.infinity) {
-          candidates.append(scored)
-          nearest.append(scored)
-          candidates.sort { $0.score > $1.score }
-          nearest.sort { $0.score > $1.score }
+        if nearest.count < ef || scored.score > (nearest.peek?.score ?? -.infinity) {
+          candidates.insert(scored)
+          nearest.insert(scored)
 
           if nearest.count > ef {
-            nearest.removeLast()
+            _ = nearest.popRoot()
           }
         }
       }
     }
 
-    return nearest.sorted { $0.score > $1.score }
+    return nearest.unorderedElements.sorted { $0.score > $1.score }
   }
 
   private func selectNeighbors(
@@ -294,12 +288,20 @@ final class HNSWIndex {
     layer: Int
   ) -> [Int] {
     var seen = Set<Int>()
-    return candidates
-      .filter { nodes[$0.id].level >= layer }
-      .filter { seen.insert($0.id).inserted }
-      .sorted { score(vector: vector, nodeID: $0.id) > score(vector: vector, nodeID: $1.id) }
-      .prefix(config.m)
-      .map(\.id)
+    var selected: [Int] = []
+    selected.reserveCapacity(config.m)
+
+    for candidate in candidates where nodes[candidate.id].level >= layer {
+      guard seen.insert(candidate.id).inserted else {
+        continue
+      }
+      selected.append(candidate.id)
+      if selected.count == config.m {
+        break
+      }
+    }
+
+    return selected
   }
 
   private func connect(nodeID: Int, neighbors: [Int], layer: Int) {
