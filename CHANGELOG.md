@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0
+
+- Moves HNSW vector scoring to Accelerate-backed dot products.
+- Reuses per-index visited markers during graph traversal instead of allocating a fresh set per layer search.
+- Reserves graph, vector, and lookup capacity before batch inserts.
+- Replaces closure-based heap comparison in the graph hot path with explicit min/max heap ordering.
+- Cuts the local 25K x 384D speed-preset HNSW insert benchmark from ~83s to ~21s.
+
 ## 1.1.0
 
 - Adds adaptive exact candidate selection for small corpora.

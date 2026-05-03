@@ -1,9 +1,15 @@
+enum HNSWScoredNodeHeapOrder {
+  case maxScore
+  case minScore
+}
+
 struct HNSWScoredNodeHeap {
   private var elements: [HNSWScoredNode] = []
-  private let hasHigherPriority: (HNSWScoredNode, HNSWScoredNode) -> Bool
+  private let order: HNSWScoredNodeHeapOrder
 
-  init(hasHigherPriority: @escaping (HNSWScoredNode, HNSWScoredNode) -> Bool) {
-    self.hasHigherPriority = hasHigherPriority
+  init(order: HNSWScoredNodeHeapOrder, minimumCapacity: Int = 0) {
+    self.order = order
+    elements.reserveCapacity(minimumCapacity)
   }
 
   var count: Int {
@@ -85,5 +91,14 @@ struct HNSWScoredNodeHeap {
 
   private func rightChildIndex(of index: Int) -> Int {
     index * 2 + 2
+  }
+
+  private func hasHigherPriority(_ lhs: HNSWScoredNode, _ rhs: HNSWScoredNode) -> Bool {
+    switch order {
+    case .maxScore:
+      lhs.score > rhs.score
+    case .minScore:
+      lhs.score < rhs.score
+    }
   }
 }

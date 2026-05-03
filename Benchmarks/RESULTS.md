@@ -34,9 +34,9 @@ Result:
 
 | Engine | avg ms | p50 ms | p95 ms | p99 ms |
 | --- | ---: | ---: | ---: | ---: |
-| Plain VecturaKit exact scan | 0.186 | 0.171 | 0.286 | 0.347 |
-| VecturaHNSWKit candidates only | 0.092 | 0.091 | 0.098 | 0.126 |
-| VecturaHNSWKit | 0.136 | 0.126 | 0.219 | 0.228 |
+| Plain VecturaKit exact scan | 0.191 | 0.178 | 0.238 | 0.341 |
+| VecturaHNSWKit candidates only | 0.057 | 0.056 | 0.062 | 0.085 |
+| VecturaHNSWKit | 0.096 | 0.090 | 0.135 | 0.171 |
 
 Recall:
 
@@ -44,6 +44,8 @@ Recall:
 candidate recall@10: 1.0000
 recall@1: 1.0000
 recall@10: 1.0000
+plain insert: 205.509 ms
+hnsw insert: 607.797 ms
 ```
 
 At this size, VecturaHNSWKit uses exact candidate fallback instead of graph
@@ -75,9 +77,9 @@ Result:
 
 | Engine | avg ms | p50 ms | p95 ms | p99 ms |
 | --- | ---: | ---: | ---: | ---: |
-| Plain VecturaKit exact scan | 2.767 | 2.865 | 3.220 | 4.085 |
-| VecturaHNSWKit candidates only | 1.647 | 1.546 | 2.182 | 2.328 |
-| VecturaHNSWKit | 1.657 | 1.649 | 2.027 | 2.145 |
+| Plain VecturaKit exact scan | 1.910 | 1.823 | 2.204 | 3.184 |
+| VecturaHNSWKit candidates only | 0.535 | 0.448 | 0.814 | 1.169 |
+| VecturaHNSWKit | 0.518 | 0.496 | 0.665 | 0.693 |
 
 Recall:
 
@@ -85,6 +87,8 @@ Recall:
 candidate recall@10: 1.0000
 recall@1: 1.0000
 recall@10: 1.0000
+plain insert: 984.680 ms
+hnsw insert: 6452.751 ms
 ```
 
 This preset is at the default exact fallback threshold, so candidate selection is
@@ -120,9 +124,9 @@ Result:
 
 | Engine | avg ms | p50 ms | p95 ms | p99 ms |
 | --- | ---: | ---: | ---: | ---: |
-| Plain VecturaKit exact scan | 2.123 | 2.058 | 2.564 | 3.141 |
-| VecturaHNSWKit candidates only | 1.430 | 1.364 | 1.693 | 2.125 |
-| VecturaHNSWKit | 1.441 | 1.412 | 1.562 | 1.675 |
+| Plain VecturaKit exact scan | 2.017 | 1.933 | 2.417 | 3.209 |
+| VecturaHNSWKit candidates only | 0.535 | 0.457 | 0.903 | 1.062 |
+| VecturaHNSWKit | 0.535 | 0.511 | 0.636 | 0.800 |
 
 Recall:
 
@@ -130,6 +134,8 @@ Recall:
 candidate recall@10: 1.0000
 recall@1: 1.0000
 recall@10: 1.0000
+plain insert: 977.596 ms
+hnsw insert: 7458.837 ms
 ```
 
 This preset favors recall. At 10K, exact fallback returns the true topK
@@ -163,16 +169,18 @@ Result:
 
 | Engine | avg ms | p50 ms | p95 ms | p99 ms |
 | --- | ---: | ---: | ---: | ---: |
-| Plain VecturaKit exact scan | 9.460 | 9.491 | 10.820 | 13.213 |
-| VecturaHNSWKit candidates only | 1.141 | 1.067 | 1.531 | 1.537 |
-| VecturaHNSWKit | 1.681 | 1.621 | 2.019 | 2.079 |
+| Plain VecturaKit exact scan | 6.764 | 6.705 | 6.821 | 8.718 |
+| VecturaHNSWKit candidates only | 0.627 | 0.622 | 0.739 | 0.772 |
+| VecturaHNSWKit | 1.098 | 1.094 | 1.211 | 1.248 |
 
 Recall:
 
 ```text
-candidate recall@10: 0.7800
+candidate recall@10: 0.8400
 recall@1: 1.0000
-recall@10: 0.7800
+recall@10: 0.8400
+plain insert: 2454.980 ms
+hnsw insert: 21303.810 ms
 ```
 
 This preset favors speed. The graph path is much faster than exact scan, with
@@ -208,16 +216,18 @@ Result:
 
 | Engine | avg ms | p50 ms | p95 ms | p99 ms |
 | --- | ---: | ---: | ---: | ---: |
-| Plain VecturaKit exact scan | 7.776 | 6.969 | 13.803 | 14.782 |
-| VecturaHNSWKit candidates only | 2.515 | 2.545 | 2.722 | 2.750 |
-| VecturaHNSWKit | 3.790 | 3.790 | 3.985 | 4.018 |
+| Plain VecturaKit exact scan | 7.106 | 7.186 | 7.500 | 8.724 |
+| VecturaHNSWKit candidates only | 1.432 | 1.431 | 1.539 | 1.582 |
+| VecturaHNSWKit | 2.753 | 2.766 | 2.888 | 2.902 |
 
 Recall:
 
 ```text
-candidate recall@10: 0.9750
+candidate recall@10: 0.9700
 recall@1: 1.0000
-recall@10: 0.9750
+recall@10: 0.9700
+plain insert: 2456.997 ms
+hnsw insert: 28058.457 ms
 ```
 
 This preset spends more graph and candidate-loading work to recover recall while

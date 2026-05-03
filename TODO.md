@@ -40,3 +40,11 @@
 - [x] Validate snapshots with SQLite document revisions.
 - [x] Tune candidate document loading for normal and large ID lists.
 - [x] Re-run release benchmarks against plain VecturaKit exact scan.
+
+## 1.2
+
+- [x] Accelerate HNSW vector scoring.
+- [x] Reuse visited markers during graph traversal.
+- [x] Reserve graph capacity before batch inserts.
+- [x] Remove closure-based heap comparison from the hot path.
+- [x] Re-run ingestion-focused release benchmarks.

@@ -29,10 +29,12 @@ swift run -c release vectura-hnsw-benchmark
 | Candidate-only benchmark split | 3.278 | 2.012 | 3.483 | 1.0000 |
 | Diversified neighbors + capped ground layer | 2.548 | 1.620 | 2.780 | 1.0000 |
 | 1.1 exact fallback + bounded topK heap | 2.123 | 1.430 | 1.441 | 1.0000 |
+| 1.2 Accelerate scoring + traversal reuse | 2.017 | 0.535 | 0.535 | 1.0000 |
 
 The 1.1 row uses exact candidate fallback at 10K. Since that path already knows
 the exact topK, it returns only `topK` candidates for rescoring instead of the
-wider graph prefilter set.
+wider graph prefilter set. The 1.2 row keeps the same behavior but moves vector
+scoring to Accelerate and reuses traversal bookkeeping during graph construction.
 
 ## Larger Corpus Presets
 
@@ -48,14 +50,16 @@ swift run -c release vectura-hnsw-benchmark
 
 | Engine | avg ms | p50 ms | p95 ms | p99 ms |
 | --- | ---: | ---: | ---: | ---: |
-| Plain VecturaKit exact scan | 9.460 | 9.491 | 10.820 | 13.213 |
-| VecturaHNSWKit candidates only | 1.141 | 1.067 | 1.531 | 1.537 |
-| VecturaHNSWKit | 1.681 | 1.621 | 2.019 | 2.079 |
+| Plain VecturaKit exact scan | 6.764 | 6.705 | 6.821 | 8.718 |
+| VecturaHNSWKit candidates only | 0.627 | 0.622 | 0.739 | 0.772 |
+| VecturaHNSWKit | 1.098 | 1.094 | 1.211 | 1.248 |
 
 ```text
-candidate recall@10: 0.7800
+candidate recall@10: 0.8400
 recall@1: 1.0000
-recall@10: 0.7800
+recall@10: 0.8400
+plain insert: 2454.980 ms
+hnsw insert: 21303.810 ms
 ```
 
 ### 25K Wider-Search Preset
@@ -73,14 +77,16 @@ swift run -c release vectura-hnsw-benchmark
 
 | Engine | avg ms | p50 ms | p95 ms | p99 ms |
 | --- | ---: | ---: | ---: | ---: |
-| Plain VecturaKit exact scan | 7.776 | 6.969 | 13.803 | 14.782 |
-| VecturaHNSWKit candidates only | 2.515 | 2.545 | 2.722 | 2.750 |
-| VecturaHNSWKit | 3.790 | 3.790 | 3.985 | 4.018 |
+| Plain VecturaKit exact scan | 7.106 | 7.186 | 7.500 | 8.724 |
+| VecturaHNSWKit candidates only | 1.432 | 1.431 | 1.539 | 1.582 |
+| VecturaHNSWKit | 2.753 | 2.766 | 2.888 | 2.902 |
 
 ```text
-candidate recall@10: 0.9750
+candidate recall@10: 0.9700
 recall@1: 1.0000
-recall@10: 0.9750
+recall@10: 0.9700
+plain insert: 2456.997 ms
+hnsw insert: 28058.457 ms
 ```
 
 Diversified construction, a capped 32-neighbor ground layer, and wider query

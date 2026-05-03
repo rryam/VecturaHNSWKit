@@ -1,3 +1,4 @@
+import Accelerate
 import Foundation
 import VecturaKit
 
@@ -84,6 +85,8 @@ final class HNSWIndex {
   private var rng: SeededGenerator
   private var nodes: [HNSWNode] = []
   private var vectors: [Float] = []
+  private var visitedMarks: [UInt32] = []
+  private var visitedGeneration: UInt32 = 0
   private var activeDocumentNodes: [UUID: Int] = [:]
   private var entryPoint: Int?
   private var maxLayer = -1
@@ -116,10 +119,12 @@ final class HNSWIndex {
   func rebuild(documents: [VecturaDocument]) throws {
     nodes.removeAll(keepingCapacity: true)
     vectors.removeAll(keepingCapacity: true)
+    visitedMarks.removeAll(keepingCapacity: true)
     activeDocumentNodes.removeAll(keepingCapacity: true)
     entryPoint = nil
     maxLayer = -1
     rng = SeededGenerator(seed: config.randomSeed)
+    reserveCapacity(additionalNodeCount: documents.count)
 
     for document in documents {
       try add(documentID: document.id, vector: document.embedding)
@@ -159,9 +164,22 @@ final class HNSWIndex {
     rng = snapshot.rng
     nodes = snapshot.nodes
     vectors = snapshot.vectors
+    visitedMarks = Array(repeating: 0, count: nodes.count)
+    visitedGeneration = 0
     activeDocumentNodes = snapshot.activeDocumentNodes
     entryPoint = snapshot.entryPoint
     maxLayer = snapshot.maxLayer
+  }
+
+  func reserveCapacity(additionalNodeCount: Int) {
+    guard additionalNodeCount > 0 else {
+      return
+    }
+
+    nodes.reserveCapacity(nodes.count + additionalNodeCount)
+    vectors.reserveCapacity(vectors.count + additionalNodeCount * dimension)
+    visitedMarks.reserveCapacity(visitedMarks.count + additionalNodeCount)
+    activeDocumentNodes.reserveCapacity(activeDocumentNodes.count + additionalNodeCount)
   }
 
   @discardableResult
@@ -182,6 +200,7 @@ final class HNSWIndex {
     )
     nodes.append(node)
     vectors.append(contentsOf: normalizedVector)
+    visitedMarks.append(0)
     activeDocumentNodes[documentID] = nodeID
 
     guard let currentEntryPoint = entryPoint else {
@@ -287,7 +306,7 @@ final class HNSWIndex {
     }
 
     let normalizedQuery = try VectorScoring.normalized(query, dimension: dimension)
-    var topNodes = HNSWScoredNodeHeap { $0.score < $1.score }
+    var topNodes = HNSWScoredNodeHeap(order: .minScore, minimumCapacity: limit)
 
     for nodeID in activeDocumentNodes.values {
       guard nodes.indices.contains(nodeID), !nodes[nodeID].isDeleted else {
@@ -339,12 +358,12 @@ final class HNSWIndex {
     ef: Int,
     layer: Int
   ) -> [HNSWScoredNode] {
-    var visited = Set<Int>()
-    var candidates = HNSWScoredNodeHeap { $0.score > $1.score }
-    var nearest = HNSWScoredNodeHeap { $0.score < $1.score }
+    let visitGeneration = nextVisitGeneration()
+    var candidates = HNSWScoredNodeHeap(order: .maxScore, minimumCapacity: ef)
+    var nearest = HNSWScoredNodeHeap(order: .minScore, minimumCapacity: ef)
 
     for entryPoint in entryPoints {
-      guard visited.insert(entryPoint).inserted else {
+      guard markVisited(entryPoint, generation: visitGeneration) else {
         continue
       }
       let scored = HNSWScoredNode(id: entryPoint, score: score(query: query, nodeID: entryPoint))
@@ -357,7 +376,10 @@ final class HNSWIndex {
         break
       }
 
-      for neighborID in neighbors(of: current.id, layer: layer) where visited.insert(neighborID).inserted {
+      for neighborID in neighbors(of: current.id, layer: layer) where markVisited(
+        neighborID,
+        generation: visitGeneration
+      ) {
         let scored = HNSWScoredNode(id: neighborID, score: score(query: query, nodeID: neighborID))
         if nearest.count < ef || scored.score > (nearest.peek?.score ?? -.infinity) {
           candidates.insert(scored)
@@ -499,22 +521,54 @@ final class HNSWIndex {
     return nodes[nodeID].neighborsByLayer[layer]
   }
 
+  private func nextVisitGeneration() -> UInt32 {
+    if visitedGeneration == UInt32.max {
+      visitedMarks = Array(repeating: 0, count: nodes.count)
+      visitedGeneration = 1
+    } else {
+      visitedGeneration += 1
+    }
+    return visitedGeneration
+  }
+
+  private func markVisited(_ nodeID: Int, generation: UInt32) -> Bool {
+    guard visitedMarks.indices.contains(nodeID), visitedMarks[nodeID] != generation else {
+      return false
+    }
+
+    visitedMarks[nodeID] = generation
+    return true
+  }
+
   private func score(query: [Float], nodeID: Int) -> Float {
     let offset = nodeID * dimension
-    var score: Float = 0
-    for index in 0..<dimension {
-      score += query[index] * vectors[offset + index]
+    return query.withUnsafeBufferPointer { queryBuffer in
+      vectors.withUnsafeBufferPointer { vectorBuffer in
+        guard let queryBase = queryBuffer.baseAddress,
+              let vectorBase = vectorBuffer.baseAddress else {
+          return 0
+        }
+
+        return vDSP.dot(
+          UnsafeBufferPointer(start: queryBase, count: dimension),
+          UnsafeBufferPointer(start: vectorBase.advanced(by: offset), count: dimension)
+        )
+      }
     }
-    return score
   }
 
   private func score(nodeID: Int, neighborID: Int) -> Float {
     let lhsOffset = nodeID * dimension
     let rhsOffset = neighborID * dimension
-    var score: Float = 0
-    for index in 0..<dimension {
-      score += vectors[lhsOffset + index] * vectors[rhsOffset + index]
+    return vectors.withUnsafeBufferPointer { vectorBuffer in
+      guard let vectorBase = vectorBuffer.baseAddress else {
+        return 0
+      }
+
+      return vDSP.dot(
+        UnsafeBufferPointer(start: vectorBase.advanced(by: lhsOffset), count: dimension),
+        UnsafeBufferPointer(start: vectorBase.advanced(by: rhsOffset), count: dimension)
+      )
     }
-    return score
   }
 }

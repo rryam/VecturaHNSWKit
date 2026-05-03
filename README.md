@@ -47,6 +47,7 @@ VecturaHNSWKit.
 
 - HNSW candidate search for VecturaKit indexed mode
 - adaptive exact candidate selection for small corpora
+- Accelerate-backed vector scoring for graph construction and search
 - `IndexedVecturaStorage` conformance
 - SQLite-backed document persistence
 - binary HNSW index snapshots with SQLite revision validation
@@ -62,7 +63,7 @@ Add VecturaHNSWKit to your package:
 
 ```swift
 dependencies: [
-  .package(url: "https://github.com/rryam/VecturaHNSWKit.git", from: "1.1.0"),
+  .package(url: "https://github.com/rryam/VecturaHNSWKit.git", from: "1.2.0"),
 ]
 ```
 
@@ -219,28 +220,31 @@ swift run -c release vectura-hnsw-benchmark
 Local 25K x 384D speed preset:
 
 ```text
-Plain VecturaKit exact scan avg: 9.460 ms
-VecturaHNSWKit candidates only avg: 1.141 ms
-VecturaHNSWKit full avg: 1.681 ms
-recall@10: 0.7800
+Plain VecturaKit exact scan avg: 6.764 ms
+VecturaHNSWKit candidates only avg: 0.627 ms
+VecturaHNSWKit full avg: 1.098 ms
+recall@10: 0.8400
+hnsw insert: 21303.810 ms
 ```
 
 Local 10K x 384D high-recall preset:
 
 ```text
-Plain VecturaKit exact scan avg: 2.123 ms
-VecturaHNSWKit candidates only avg: 1.430 ms
-VecturaHNSWKit full avg: 1.441 ms
+Plain VecturaKit exact scan avg: 2.017 ms
+VecturaHNSWKit candidates only avg: 0.535 ms
+VecturaHNSWKit full avg: 0.535 ms
 recall@10: 1.0000
+hnsw insert: 7458.837 ms
 ```
 
 Local 25K x 384D wider-search preset:
 
 ```text
-Plain VecturaKit exact scan avg: 7.776 ms
-VecturaHNSWKit candidates only avg: 2.515 ms
-VecturaHNSWKit full avg: 3.790 ms
-recall@10: 0.9750
+Plain VecturaKit exact scan avg: 7.106 ms
+VecturaHNSWKit candidates only avg: 1.432 ms
+VecturaHNSWKit full avg: 2.753 ms
+recall@10: 0.9700
+hnsw insert: 28058.457 ms
 ```
 
 The benchmark story is deliberately measurable: small corpora use exact
