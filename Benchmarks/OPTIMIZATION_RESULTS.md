@@ -30,11 +30,14 @@ swift run -c release vectura-hnsw-benchmark
 | Diversified neighbors + capped ground layer | 2.548 | 1.620 | 2.780 | 1.0000 |
 | 1.1 exact fallback + bounded topK heap | 2.123 | 1.430 | 1.441 | 1.0000 |
 | 1.2 Accelerate scoring + traversal reuse | 2.017 | 0.535 | 0.535 | 1.0000 |
+| 1.4 deterministic corpus + overflow-only reverse pruning | 2.324 | 0.576 | 0.682 | 1.0000 |
 
 The 1.1 row uses exact candidate fallback at 10K. Since that path already knows
 the exact topK, it returns only `topK` candidates for rescoring instead of the
 wider graph prefilter set. The 1.2 row keeps the same behavior but moves vector
 scoring to Accelerate and reuses traversal bookkeeping during graph construction.
+The 1.4 row uses a stable benchmark corpus and skips reverse-link pruning when
+the reverse edge does not overflow the layer budget.
 
 ## Larger Corpus Presets
 
@@ -50,16 +53,16 @@ swift run -c release vectura-hnsw-benchmark
 
 | Engine | avg ms | p50 ms | p95 ms | p99 ms |
 | --- | ---: | ---: | ---: | ---: |
-| Plain VecturaKit exact scan | 6.764 | 6.705 | 6.821 | 8.718 |
-| VecturaHNSWKit candidates only | 0.627 | 0.622 | 0.739 | 0.772 |
-| VecturaHNSWKit | 1.098 | 1.094 | 1.211 | 1.248 |
+| Plain VecturaKit exact scan | 8.101 | 8.301 | 8.861 | 10.118 |
+| VecturaHNSWKit candidates only | 0.839 | 0.843 | 1.183 | 1.199 |
+| VecturaHNSWKit | 1.214 | 1.207 | 1.436 | 1.457 |
 
 ```text
-candidate recall@10: 0.8400
+candidate recall@10: 0.7950
 recall@1: 1.0000
-recall@10: 0.8400
-plain insert: 2454.980 ms
-hnsw insert: 21303.810 ms
+recall@10: 0.7950
+plain insert: 2452.324 ms
+hnsw insert: 21805.923 ms
 ```
 
 ### 25K Wider-Search Preset
@@ -77,16 +80,16 @@ swift run -c release vectura-hnsw-benchmark
 
 | Engine | avg ms | p50 ms | p95 ms | p99 ms |
 | --- | ---: | ---: | ---: | ---: |
-| Plain VecturaKit exact scan | 7.106 | 7.186 | 7.500 | 8.724 |
-| VecturaHNSWKit candidates only | 1.432 | 1.431 | 1.539 | 1.582 |
-| VecturaHNSWKit | 2.753 | 2.766 | 2.888 | 2.902 |
+| Plain VecturaKit exact scan | 8.199 | 8.187 | 8.650 | 9.834 |
+| VecturaHNSWKit candidates only | 1.515 | 1.523 | 1.731 | 1.975 |
+| VecturaHNSWKit | 2.894 | 2.953 | 3.110 | 3.262 |
 
 ```text
-candidate recall@10: 0.9700
+candidate recall@10: 0.9550
 recall@1: 1.0000
-recall@10: 0.9700
-plain insert: 2456.997 ms
-hnsw insert: 28058.457 ms
+recall@10: 0.9550
+plain insert: 2594.359 ms
+hnsw insert: 29643.618 ms
 ```
 
 Diversified construction, a capped 32-neighbor ground layer, and wider query

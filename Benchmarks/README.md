@@ -36,5 +36,8 @@ The benchmark reports:
 - cold open time
 - snapshot size
 
+The synthetic vectors are generated from stable seeds so repeated release runs
+use the same corpus and query set.
+
 See [RESULTS.md](RESULTS.md) and [OPTIMIZATION_RESULTS.md](OPTIMIZATION_RESULTS.md)
 for local result snapshots.

@@ -56,3 +56,12 @@
 - [x] Keep safe capped ground-layer behavior by default.
 - [x] Add optional deterministic batch insertion shuffling.
 - [x] Benchmark default, high-recall, uncapped, and seeded-order variants.
+
+## 1.4
+
+- [x] Audit code and docs for inflated or stale claims.
+- [x] Reuse vector buffers across graph traversal and neighbor-selection hot paths.
+- [x] Prune reverse links only when a layer exceeds its neighbor budget.
+- [x] Validate snapshot topology before accepting restored graph state.
+- [x] Make benchmark vectors deterministic across processes.
+- [x] Re-run release benchmarks against plain VecturaKit exact scan.

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.0
+
+- Reduces insertion hot-path overhead by reusing vector buffers through graph traversal and neighbor selection.
+- Skips reverse-link pruning when a new reverse edge does not exceed the layer neighbor budget.
+- Strengthens snapshot restore validation for node IDs, layer topology, neighbor links, entry point bounds, and active document mappings.
+- Makes the benchmark corpus deterministic across processes by replacing Swift's randomized `hashValue`.
+- Refreshes release benchmark snapshots for small, 10K, and 25K presets.
+
 ## 1.3.0
 
 - Adds `level0NeighborMultiplier` and `level0NeighborCap` for explicit ground-layer tuning.

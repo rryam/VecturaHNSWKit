@@ -1,7 +1,8 @@
 # Benchmark Results
 
 These are local release-mode benchmark snapshots from May 3, 2026. Re-run the
-benchmark before publishing numbers.
+benchmark before publishing numbers. The synthetic vectors use a stable seed so
+the corpus is reproducible across benchmark processes.
 
 The benchmark compares only:
 
@@ -37,9 +38,9 @@ Result:
 
 | Engine | avg ms | p50 ms | p95 ms | p99 ms |
 | --- | ---: | ---: | ---: | ---: |
-| Plain VecturaKit exact scan | 0.191 | 0.178 | 0.238 | 0.341 |
-| VecturaHNSWKit candidates only | 0.057 | 0.056 | 0.062 | 0.085 |
-| VecturaHNSWKit | 0.096 | 0.090 | 0.135 | 0.171 |
+| Plain VecturaKit exact scan | 0.211 | 0.187 | 0.408 | 0.424 |
+| VecturaHNSWKit candidates only | 0.067 | 0.054 | 0.134 | 0.157 |
+| VecturaHNSWKit | 0.100 | 0.092 | 0.122 | 0.215 |
 
 Recall:
 
@@ -47,8 +48,8 @@ Recall:
 candidate recall@10: 1.0000
 recall@1: 1.0000
 recall@10: 1.0000
-plain insert: 205.509 ms
-hnsw insert: 607.797 ms
+plain insert: 208.035 ms
+hnsw insert: 353.350 ms
 ```
 
 At this size, VecturaHNSWKit uses exact candidate fallback instead of graph
@@ -83,9 +84,9 @@ Result:
 
 | Engine | avg ms | p50 ms | p95 ms | p99 ms |
 | --- | ---: | ---: | ---: | ---: |
-| Plain VecturaKit exact scan | 1.910 | 1.823 | 2.204 | 3.184 |
-| VecturaHNSWKit candidates only | 0.535 | 0.448 | 0.814 | 1.169 |
-| VecturaHNSWKit | 0.518 | 0.496 | 0.665 | 0.693 |
+| Plain VecturaKit exact scan | 2.360 | 2.269 | 2.752 | 3.337 |
+| VecturaHNSWKit candidates only | 0.549 | 0.464 | 0.795 | 1.284 |
+| VecturaHNSWKit | 0.552 | 0.515 | 0.721 | 0.746 |
 
 Recall:
 
@@ -93,8 +94,8 @@ Recall:
 candidate recall@10: 1.0000
 recall@1: 1.0000
 recall@10: 1.0000
-plain insert: 984.680 ms
-hnsw insert: 6452.751 ms
+plain insert: 973.520 ms
+hnsw insert: 5417.022 ms
 ```
 
 This preset is at the default exact fallback threshold, so candidate selection is
@@ -133,9 +134,9 @@ Result:
 
 | Engine | avg ms | p50 ms | p95 ms | p99 ms |
 | --- | ---: | ---: | ---: | ---: |
-| Plain VecturaKit exact scan | 2.017 | 1.933 | 2.417 | 3.209 |
-| VecturaHNSWKit candidates only | 0.535 | 0.457 | 0.903 | 1.062 |
-| VecturaHNSWKit | 0.535 | 0.511 | 0.636 | 0.800 |
+| Plain VecturaKit exact scan | 2.324 | 2.238 | 2.831 | 3.471 |
+| VecturaHNSWKit candidates only | 0.576 | 0.501 | 1.091 | 1.186 |
+| VecturaHNSWKit | 0.682 | 0.614 | 1.086 | 1.200 |
 
 Recall:
 
@@ -143,8 +144,8 @@ Recall:
 candidate recall@10: 1.0000
 recall@1: 1.0000
 recall@10: 1.0000
-plain insert: 977.596 ms
-hnsw insert: 7458.837 ms
+plain insert: 977.458 ms
+hnsw insert: 6809.994 ms
 ```
 
 This preset favors recall. At 10K, exact fallback returns the true topK
@@ -181,18 +182,18 @@ Result:
 
 | Engine | avg ms | p50 ms | p95 ms | p99 ms |
 | --- | ---: | ---: | ---: | ---: |
-| Plain VecturaKit exact scan | 6.764 | 6.705 | 6.821 | 8.718 |
-| VecturaHNSWKit candidates only | 0.627 | 0.622 | 0.739 | 0.772 |
-| VecturaHNSWKit | 1.098 | 1.094 | 1.211 | 1.248 |
+| Plain VecturaKit exact scan | 8.101 | 8.301 | 8.861 | 10.118 |
+| VecturaHNSWKit candidates only | 0.839 | 0.843 | 1.183 | 1.199 |
+| VecturaHNSWKit | 1.214 | 1.207 | 1.436 | 1.457 |
 
 Recall:
 
 ```text
-candidate recall@10: 0.8400
+candidate recall@10: 0.7950
 recall@1: 1.0000
-recall@10: 0.8400
-plain insert: 2454.980 ms
-hnsw insert: 21303.810 ms
+recall@10: 0.7950
+plain insert: 2452.324 ms
+hnsw insert: 21805.923 ms
 ```
 
 This preset favors speed. The graph path is much faster than exact scan, with
@@ -231,18 +232,18 @@ Result:
 
 | Engine | avg ms | p50 ms | p95 ms | p99 ms |
 | --- | ---: | ---: | ---: | ---: |
-| Plain VecturaKit exact scan | 7.106 | 7.186 | 7.500 | 8.724 |
-| VecturaHNSWKit candidates only | 1.432 | 1.431 | 1.539 | 1.582 |
-| VecturaHNSWKit | 2.753 | 2.766 | 2.888 | 2.902 |
+| Plain VecturaKit exact scan | 8.199 | 8.187 | 8.650 | 9.834 |
+| VecturaHNSWKit candidates only | 1.515 | 1.523 | 1.731 | 1.975 |
+| VecturaHNSWKit | 2.894 | 2.953 | 3.110 | 3.262 |
 
 Recall:
 
 ```text
-candidate recall@10: 0.9700
+candidate recall@10: 0.9550
 recall@1: 1.0000
-recall@10: 0.9700
-plain insert: 2456.997 ms
-hnsw insert: 28058.457 ms
+recall@10: 0.9550
+plain insert: 2594.359 ms
+hnsw insert: 29643.618 ms
 ```
 
 This preset spends more graph and candidate-loading work to recover recall while

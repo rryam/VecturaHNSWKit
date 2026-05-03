@@ -197,6 +197,10 @@ public actor HNSWStorageProvider: IndexedVecturaStorage {
   }
 
   public func saveDocuments(_ documents: [VecturaDocument]) async throws {
+    guard !documents.isEmpty else {
+      return
+    }
+
     try documents.forEach(validate)
     try store.saveDocuments(documents)
     do {

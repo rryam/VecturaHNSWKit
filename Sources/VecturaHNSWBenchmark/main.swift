@@ -281,13 +281,22 @@ struct BenchmarkEmbedder: VecturaEmbedder {
 
 enum DeterministicVectors {
   static func vector(key: String, dimension: Int) -> [Float] {
-    var generator = BenchmarkGenerator(seed: UInt64(abs(key.hashValue)) &+ UInt64(dimension))
+    var generator = BenchmarkGenerator(seed: stableSeed(key: key, dimension: dimension))
     var vector = [Float]()
     vector.reserveCapacity(dimension)
     for _ in 0..<dimension {
       vector.append(Float(generator.nextUnitDouble() * 2 - 1))
     }
     return normalize(vector)
+  }
+
+  private static func stableSeed(key: String, dimension: Int) -> UInt64 {
+    var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+    for byte in key.utf8 {
+      hash ^= UInt64(byte)
+      hash &*= 0x0000_0100_0000_01b3
+    }
+    return hash &+ UInt64(dimension)
   }
 
   private static func normalize(_ vector: [Float]) -> [Float] {

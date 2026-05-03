@@ -154,6 +154,8 @@ final class HNSWIndex {
       throw HNSWStorageError.invalidDimension(expected: dimension, actual: snapshot.dimension)
     }
     guard snapshot.config.m == config.m,
+          snapshot.config.level0NeighborMultiplier == config.level0NeighborMultiplier,
+          snapshot.config.level0NeighborCap == config.level0NeighborCap,
           snapshot.config.metric == config.metric else {
       throw HNSWStorageError.invalidConfiguration("HNSW snapshot config does not match storage config")
     }
@@ -169,6 +171,8 @@ final class HNSWIndex {
     activeDocumentNodes = snapshot.activeDocumentNodes
     entryPoint = snapshot.entryPoint
     maxLayer = snapshot.maxLayer
+
+    try validateRestoredTopology()
   }
 
   func reserveCapacity(additionalNodeCount: Int) {
@@ -308,16 +312,28 @@ final class HNSWIndex {
     let normalizedQuery = try VectorScoring.normalized(query, dimension: dimension)
     var topNodes = HNSWScoredNodeHeap(order: .minScore, minimumCapacity: limit)
 
-    for nodeID in activeDocumentNodes.values {
-      guard nodes.indices.contains(nodeID), !nodes[nodeID].isDeleted else {
-        continue
-      }
-      let candidate = HNSWScoredNode(id: nodeID, score: score(query: normalizedQuery, nodeID: nodeID))
-      if topNodes.count < limit {
-        topNodes.insert(candidate)
-      } else if let worst = topNodes.peek, candidate.score > worst.score {
-        _ = topNodes.popRoot()
-        topNodes.insert(candidate)
+    normalizedQuery.withUnsafeBufferPointer { queryBuffer in
+      vectors.withUnsafeBufferPointer { vectorBuffer in
+        guard let queryBase = queryBuffer.baseAddress,
+              let vectorBase = vectorBuffer.baseAddress else {
+          return
+        }
+
+        for nodeID in activeDocumentNodes.values {
+          guard nodes.indices.contains(nodeID), !nodes[nodeID].isDeleted else {
+            continue
+          }
+          let candidate = HNSWScoredNode(
+            id: nodeID,
+            score: score(queryBase: queryBase, vectorBase: vectorBase, nodeID: nodeID)
+          )
+          if topNodes.count < limit {
+            topNodes.insert(candidate)
+          } else if let worst = topNodes.peek, candidate.score > worst.score {
+            _ = topNodes.popRoot()
+            topNodes.insert(candidate)
+          }
+        }
       }
     }
 
@@ -333,23 +349,32 @@ final class HNSWIndex {
   }
 
   private func greedySearch(query: [Float], entryPoint: Int, layer: Int) -> Int {
-    var current = entryPoint
-    var currentScore = score(query: query, nodeID: current)
-    var changed = true
-
-    while changed {
-      changed = false
-      for neighborID in neighbors(of: current, layer: layer) {
-        let neighborScore = score(query: query, nodeID: neighborID)
-        if neighborScore > currentScore {
-          current = neighborID
-          currentScore = neighborScore
-          changed = true
+    query.withUnsafeBufferPointer { queryBuffer in
+      vectors.withUnsafeBufferPointer { vectorBuffer in
+        guard let queryBase = queryBuffer.baseAddress,
+              let vectorBase = vectorBuffer.baseAddress else {
+          return entryPoint
         }
+
+        var current = entryPoint
+        var currentScore = score(queryBase: queryBase, vectorBase: vectorBase, nodeID: current)
+        var changed = true
+
+        while changed {
+          changed = false
+          for neighborID in neighbors(of: current, layer: layer) {
+            let neighborScore = score(queryBase: queryBase, vectorBase: vectorBase, nodeID: neighborID)
+            if neighborScore > currentScore {
+              current = neighborID
+              currentScore = neighborScore
+              changed = true
+            }
+          }
+        }
+
+        return current
       }
     }
-
-    return current
   }
 
   private func searchLayer(
@@ -358,68 +383,108 @@ final class HNSWIndex {
     ef: Int,
     layer: Int
   ) -> [HNSWScoredNode] {
-    let visitGeneration = nextVisitGeneration()
-    var candidates = HNSWScoredNodeHeap(order: .maxScore, minimumCapacity: ef)
-    var nearest = HNSWScoredNodeHeap(order: .minScore, minimumCapacity: ef)
+    query.withUnsafeBufferPointer { queryBuffer in
+      vectors.withUnsafeBufferPointer { vectorBuffer in
+        guard let queryBase = queryBuffer.baseAddress,
+              let vectorBase = vectorBuffer.baseAddress else {
+          return []
+        }
 
-    for entryPoint in entryPoints {
-      guard markVisited(entryPoint, generation: visitGeneration) else {
-        continue
-      }
-      let scored = HNSWScoredNode(id: entryPoint, score: score(query: query, nodeID: entryPoint))
-      candidates.insert(scored)
-      nearest.insert(scored)
-    }
+        let visitGeneration = nextVisitGeneration()
+        var candidates = HNSWScoredNodeHeap(order: .maxScore, minimumCapacity: ef)
+        var nearest = HNSWScoredNodeHeap(order: .minScore, minimumCapacity: ef)
 
-    while let current = candidates.popRoot() {
-      if nearest.count >= ef, let worst = nearest.peek, current.score < worst.score {
-        break
-      }
-
-      for neighborID in neighbors(of: current.id, layer: layer) where markVisited(
-        neighborID,
-        generation: visitGeneration
-      ) {
-        let scored = HNSWScoredNode(id: neighborID, score: score(query: query, nodeID: neighborID))
-        if nearest.count < ef || scored.score > (nearest.peek?.score ?? -.infinity) {
+        for entryPoint in entryPoints {
+          guard markVisited(entryPoint, generation: visitGeneration) else {
+            continue
+          }
+          let scored = HNSWScoredNode(
+            id: entryPoint,
+            score: score(queryBase: queryBase, vectorBase: vectorBase, nodeID: entryPoint)
+          )
           candidates.insert(scored)
           nearest.insert(scored)
+        }
 
-          if nearest.count > ef {
-            _ = nearest.popRoot()
+        while let current = candidates.popRoot() {
+          if nearest.count >= ef, let worst = nearest.peek, current.score < worst.score {
+            break
+          }
+
+          for neighborID in neighbors(of: current.id, layer: layer) where markVisited(
+            neighborID,
+            generation: visitGeneration
+          ) {
+            let scored = HNSWScoredNode(
+              id: neighborID,
+              score: score(queryBase: queryBase, vectorBase: vectorBase, nodeID: neighborID)
+            )
+            if nearest.count < ef || scored.score > (nearest.peek?.score ?? -.infinity) {
+              candidates.insert(scored)
+              nearest.insert(scored)
+
+              if nearest.count > ef {
+                _ = nearest.popRoot()
+              }
+            }
           }
         }
+
+        return nearest.unorderedElements.sorted { $0.score > $1.score }
       }
     }
-
-    return nearest.unorderedElements.sorted { $0.score > $1.score }
   }
 
   private func selectNeighbors(
     candidates: [HNSWScoredNode],
     layer: Int,
     queryNodeID: Int,
-    maxCount: Int
+    maxCount: Int,
+    prefiltered: Bool = false
   ) -> [Int] {
-    var seen = Set<Int>()
-    var selectedIDs = Set<Int>()
+    vectors.withUnsafeBufferPointer { vectorBuffer in
+      guard let vectorBase = vectorBuffer.baseAddress else {
+        return []
+      }
+      return selectNeighbors(
+        candidates: candidates,
+        layer: layer,
+        queryNodeID: queryNodeID,
+        maxCount: maxCount,
+        prefiltered: prefiltered,
+        vectorBase: vectorBase
+      )
+    }
+  }
+
+  private func selectNeighbors(
+    candidates: [HNSWScoredNode],
+    layer: Int,
+    queryNodeID: Int,
+    maxCount: Int,
+    prefiltered: Bool,
+    vectorBase: UnsafePointer<Float>
+  ) -> [Int] {
     var selected: [Int] = []
     var rejected: [Int] = []
     selected.reserveCapacity(maxCount)
     rejected.reserveCapacity(maxCount)
 
-    for candidate in candidates where isSelectableNeighbor(candidate.id, layer: layer, queryNodeID: queryNodeID) {
-      guard seen.insert(candidate.id).inserted else {
+    for candidate in candidates {
+      if selected.contains(candidate.id) || rejected.contains(candidate.id) {
+        continue
+      }
+      if !prefiltered && !isSelectableNeighbor(candidate.id, layer: layer, queryNodeID: queryNodeID) {
         continue
       }
 
       if shouldSelectDiversifiedNeighbor(
         candidateID: candidate.id,
         candidateQueryScore: candidate.score,
-        selectedIDs: selected
+        selectedIDs: selected,
+        vectorBase: vectorBase
       ) {
         selected.append(candidate.id)
-        selectedIDs.insert(candidate.id)
       } else {
         rejected.append(candidate.id)
       }
@@ -429,9 +494,8 @@ final class HNSWIndex {
       }
     }
 
-    for candidateID in rejected where !selectedIDs.contains(candidateID) {
+    for candidateID in rejected {
       selected.append(candidateID)
-      selectedIDs.insert(candidateID)
       if selected.count == maxCount {
         break
       }
@@ -446,42 +510,51 @@ final class HNSWIndex {
     }
 
     nodes[nodeID].neighborsByLayer[layer] = neighbors
+    let maxNeighborCount = maxNeighbors(for: layer)
     for neighborID in neighbors where nodes[neighborID].neighborsByLayer.indices.contains(layer) {
-      if !nodes[neighborID].neighborsByLayer[layer].contains(nodeID) {
-        nodes[neighborID].neighborsByLayer[layer].append(nodeID)
+      guard !nodes[neighborID].neighborsByLayer[layer].contains(nodeID) else {
+        continue
       }
-      pruneNeighbors(of: neighborID, layer: layer)
+
+      nodes[neighborID].neighborsByLayer[layer].append(nodeID)
+      if nodes[neighborID].neighborsByLayer[layer].count > maxNeighborCount {
+        pruneNeighbors(of: neighborID, layer: layer, maxCount: maxNeighborCount)
+      }
     }
   }
 
-  private func pruneNeighbors(of nodeID: Int, layer: Int) {
-    var seen = Set<Int>()
+  private func pruneNeighbors(of nodeID: Int, layer: Int, maxCount: Int) {
     var candidates: [HNSWScoredNode] = []
     candidates.reserveCapacity(nodes[nodeID].neighborsByLayer[layer].count)
 
-    for neighborID in nodes[nodeID].neighborsByLayer[layer] where isSelectableNeighbor(
-      neighborID,
-      layer: layer,
-      queryNodeID: nodeID
-    ) {
-      guard seen.insert(neighborID).inserted else {
-        continue
+    vectors.withUnsafeBufferPointer { vectorBuffer in
+      guard let vectorBase = vectorBuffer.baseAddress else {
+        return
       }
-      candidates.append(
-        HNSWScoredNode(
-          id: neighborID,
-          score: score(nodeID: nodeID, neighborID: neighborID)
+
+      for neighborID in nodes[nodeID].neighborsByLayer[layer] where isSelectableNeighbor(
+        neighborID,
+        layer: layer,
+        queryNodeID: nodeID
+      ) {
+        candidates.append(
+          HNSWScoredNode(
+            id: neighborID,
+            score: score(vectorBase: vectorBase, nodeID: nodeID, neighborID: neighborID)
+          )
         )
+      }
+
+      candidates.sort { $0.score > $1.score }
+      nodes[nodeID].neighborsByLayer[layer] = selectNeighbors(
+        candidates: candidates,
+        layer: layer,
+        queryNodeID: nodeID,
+        maxCount: maxCount,
+        prefiltered: true,
+        vectorBase: vectorBase
       )
     }
-
-    candidates.sort { $0.score > $1.score }
-    nodes[nodeID].neighborsByLayer[layer] = selectNeighbors(
-      candidates: candidates,
-      layer: layer,
-      queryNodeID: nodeID,
-      maxCount: maxNeighbors(for: layer)
-    )
   }
 
   private func maxNeighbors(for layer: Int) -> Int {
@@ -524,10 +597,15 @@ final class HNSWIndex {
   private func shouldSelectDiversifiedNeighbor(
     candidateID: Int,
     candidateQueryScore: Float,
-    selectedIDs: [Int]
+    selectedIDs: [Int],
+    vectorBase: UnsafePointer<Float>
   ) -> Bool {
     for selectedID in selectedIDs {
-      let candidateToSelectedScore = score(nodeID: candidateID, neighborID: selectedID)
+      let candidateToSelectedScore = score(
+        vectorBase: vectorBase,
+        nodeID: candidateID,
+        neighborID: selectedID
+      )
       if candidateToSelectedScore >= candidateQueryScore {
         return false
       }
@@ -541,6 +619,49 @@ final class HNSWIndex {
       return []
     }
     return nodes[nodeID].neighborsByLayer[layer]
+  }
+
+  private func validateRestoredTopology() throws {
+    guard maxLayer >= -1 else {
+      throw HNSWStorageError.invalidConfiguration("HNSW snapshot max layer is corrupt")
+    }
+    if let entryPoint {
+      guard nodes.indices.contains(entryPoint) else {
+        throw HNSWStorageError.invalidConfiguration("HNSW snapshot entry point is corrupt")
+      }
+      guard nodes[entryPoint].level >= maxLayer else {
+        throw HNSWStorageError.invalidConfiguration("HNSW snapshot entry point layer is corrupt")
+      }
+    } else if !nodes.isEmpty {
+      throw HNSWStorageError.invalidConfiguration("HNSW snapshot is missing an entry point")
+    }
+
+    for (nodeIndex, node) in nodes.enumerated() {
+      guard node.id == nodeIndex else {
+        throw HNSWStorageError.invalidConfiguration("HNSW snapshot node IDs are corrupt")
+      }
+      guard node.level >= 0, node.neighborsByLayer.count == node.level + 1 else {
+        throw HNSWStorageError.invalidConfiguration("HNSW snapshot node layers are corrupt")
+      }
+
+      for (layer, neighbors) in node.neighborsByLayer.enumerated() {
+        for neighborID in neighbors {
+          guard neighborID != node.id,
+                nodes.indices.contains(neighborID),
+                nodes[neighborID].neighborsByLayer.indices.contains(layer) else {
+            throw HNSWStorageError.invalidConfiguration("HNSW snapshot neighbor links are corrupt")
+          }
+        }
+      }
+    }
+
+    for (documentID, nodeID) in activeDocumentNodes {
+      guard nodes.indices.contains(nodeID),
+            nodes[nodeID].documentID == documentID,
+            !nodes[nodeID].isDeleted else {
+        throw HNSWStorageError.invalidConfiguration("HNSW snapshot active document map is corrupt")
+      }
+    }
   }
 
   private func nextVisitGeneration() -> UInt32 {
@@ -562,35 +683,28 @@ final class HNSWIndex {
     return true
   }
 
-  private func score(query: [Float], nodeID: Int) -> Float {
+  private func score(
+    queryBase: UnsafePointer<Float>,
+    vectorBase: UnsafePointer<Float>,
+    nodeID: Int
+  ) -> Float {
     let offset = nodeID * dimension
-    return query.withUnsafeBufferPointer { queryBuffer in
-      vectors.withUnsafeBufferPointer { vectorBuffer in
-        guard let queryBase = queryBuffer.baseAddress,
-              let vectorBase = vectorBuffer.baseAddress else {
-          return 0
-        }
-
-        return vDSP.dot(
-          UnsafeBufferPointer(start: queryBase, count: dimension),
-          UnsafeBufferPointer(start: vectorBase.advanced(by: offset), count: dimension)
-        )
-      }
-    }
+    return vDSP.dot(
+      UnsafeBufferPointer(start: queryBase, count: dimension),
+      UnsafeBufferPointer(start: vectorBase.advanced(by: offset), count: dimension)
+    )
   }
 
-  private func score(nodeID: Int, neighborID: Int) -> Float {
+  private func score(
+    vectorBase: UnsafePointer<Float>,
+    nodeID: Int,
+    neighborID: Int
+  ) -> Float {
     let lhsOffset = nodeID * dimension
     let rhsOffset = neighborID * dimension
-    return vectors.withUnsafeBufferPointer { vectorBuffer in
-      guard let vectorBase = vectorBuffer.baseAddress else {
-        return 0
-      }
-
-      return vDSP.dot(
-        UnsafeBufferPointer(start: vectorBase.advanced(by: lhsOffset), count: dimension),
-        UnsafeBufferPointer(start: vectorBase.advanced(by: rhsOffset), count: dimension)
-      )
-    }
+    return vDSP.dot(
+      UnsafeBufferPointer(start: vectorBase.advanced(by: lhsOffset), count: dimension),
+      UnsafeBufferPointer(start: vectorBase.advanced(by: rhsOffset), count: dimension)
+    )
   }
 }

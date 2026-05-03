@@ -63,7 +63,7 @@ Add VecturaHNSWKit to your package:
 
 ```swift
 dependencies: [
-  .package(url: "https://github.com/rryam/VecturaHNSWKit.git", from: "1.3.0"),
+  .package(url: "https://github.com/rryam/VecturaHNSWKit.git", from: "1.4.0"),
 ]
 ```
 
@@ -244,31 +244,31 @@ swift run -c release vectura-hnsw-benchmark
 Local 25K x 384D speed preset:
 
 ```text
-Plain VecturaKit exact scan avg: 6.764 ms
-VecturaHNSWKit candidates only avg: 0.627 ms
-VecturaHNSWKit full avg: 1.098 ms
-recall@10: 0.8400
-hnsw insert: 21303.810 ms
+Plain VecturaKit exact scan avg: 8.101 ms
+VecturaHNSWKit candidates only avg: 0.839 ms
+VecturaHNSWKit full avg: 1.214 ms
+recall@10: 0.7950
+hnsw insert: 21805.923 ms
 ```
 
 Local 10K x 384D high-recall preset:
 
 ```text
-Plain VecturaKit exact scan avg: 2.017 ms
-VecturaHNSWKit candidates only avg: 0.535 ms
-VecturaHNSWKit full avg: 0.535 ms
+Plain VecturaKit exact scan avg: 2.324 ms
+VecturaHNSWKit candidates only avg: 0.576 ms
+VecturaHNSWKit full avg: 0.682 ms
 recall@10: 1.0000
-hnsw insert: 7458.837 ms
+hnsw insert: 6809.994 ms
 ```
 
 Local 25K x 384D wider-search preset:
 
 ```text
-Plain VecturaKit exact scan avg: 7.106 ms
-VecturaHNSWKit candidates only avg: 1.432 ms
-VecturaHNSWKit full avg: 2.753 ms
-recall@10: 0.9700
-hnsw insert: 28058.457 ms
+Plain VecturaKit exact scan avg: 8.199 ms
+VecturaHNSWKit candidates only avg: 1.515 ms
+VecturaHNSWKit full avg: 2.894 ms
+recall@10: 0.9550
+hnsw insert: 29643.618 ms
 ```
 
 The benchmark story is deliberately measurable: small corpora use exact
@@ -293,8 +293,10 @@ recoverable acceleration structure.
   available for explicit maintenance.
 - Snapshots carry the SQLite document revision. Validated recovery rejects stale
   snapshots after inserts, deletes, or updates, then rebuilds from SQLite.
-- Ingestion is expected to be slower than exact storage because graph
-  construction does real neighbor search and link maintenance.
+- Ingestion is the cost center: graph construction does neighbor search,
+  diversified link selection, and reverse-link maintenance. The hot path avoids
+  unnecessary reverse-link pruning, but higher `m` and `efConstruction` values
+  still deliberately spend build time to buy recall.
 
 The package is built to make these tradeoffs explicit: correctness and
 recoverability first, with benchmarks for every performance claim.
