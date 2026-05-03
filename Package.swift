@@ -16,6 +16,10 @@ let package = Package(
       name: "VecturaHNSWKit",
       targets: ["VecturaHNSWKit"]
     ),
+    .executable(
+      name: "vectura-hnsw-benchmark",
+      targets: ["VecturaHNSWBenchmark"]
+    ),
   ],
   dependencies: [
     .package(url: "https://github.com/rryam/VecturaKit.git", from: "6.1.0"),
@@ -28,6 +32,13 @@ let package = Package(
       ],
       linkerSettings: [
         .linkedLibrary("sqlite3"),
+      ]
+    ),
+    .executableTarget(
+      name: "VecturaHNSWBenchmark",
+      dependencies: [
+        "VecturaHNSWKit",
+        .product(name: "VecturaKit", package: "VecturaKit"),
       ]
     ),
     .testTarget(

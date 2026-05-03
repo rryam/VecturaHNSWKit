@@ -12,11 +12,11 @@
 
 ## 0.2
 
-- [ ] Persist HNSW snapshots.
-- [ ] Add rebuild and compact APIs.
-- [ ] Add benchmark executable.
-- [ ] Compare against plain VecturaKit exact scan.
-- [ ] Commit 0.2.
+- [x] Persist HNSW snapshots.
+- [x] Add rebuild and compact APIs.
+- [x] Add benchmark executable.
+- [x] Compare against plain VecturaKit exact scan.
+- [x] Commit 0.2.
 
 ## 0.3
 

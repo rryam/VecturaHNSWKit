@@ -87,6 +87,48 @@ struct HNSWStorageProviderTests {
     #expect(try await storage.documentExists(id: apple.id) == false)
   }
 
+  @Test("snapshot can be saved and loaded on reopen")
+  func snapshotCanBeSavedAndLoadedOnReopen() async throws {
+    let directory = try temporaryDirectory()
+    let storage = try HNSWStorageProvider(directoryURL: directory, dimension: 3)
+    let apple = VecturaDocument(text: "apple", embedding: [1, 0, 0])
+    let banana = VecturaDocument(text: "banana", embedding: [0, 1, 0])
+
+    try await storage.saveDocuments([apple, banana])
+    try await storage.saveIndexSnapshot()
+
+    let reopened = try HNSWStorageProvider(directoryURL: directory, dimension: 3)
+    let candidates = try await reopened.searchVectorCandidates(
+      queryEmbedding: [1, 0, 0],
+      topK: 1,
+      prefilterSize: 2
+    )
+    let stats = await reopened.stats
+
+    #expect(candidates?.first == apple.id)
+    #expect((stats.snapshotBytes ?? 0) > 0)
+  }
+
+  @Test("compact rebuilds graph without deleted nodes")
+  func compactRebuildsGraphWithoutDeletedNodes() async throws {
+    let directory = try temporaryDirectory()
+    let storage = try HNSWStorageProvider(directoryURL: directory, dimension: 3)
+    let apple = VecturaDocument(text: "apple", embedding: [1, 0, 0])
+    let banana = VecturaDocument(text: "banana", embedding: [0, 1, 0])
+
+    try await storage.saveDocuments([apple, banana])
+    try await storage.deleteDocument(withID: apple.id)
+
+    let beforeCompact = await storage.stats
+    try await storage.compactIndex()
+    let afterCompact = await storage.stats
+
+    #expect(beforeCompact.deletedNodeCount == 1)
+    #expect(afterCompact.deletedNodeCount == 0)
+    #expect(afterCompact.activeNodeCount == 1)
+    #expect((afterCompact.snapshotBytes ?? 0) > 0)
+  }
+
   private func temporaryDirectory() throws -> URL {
     let url = FileManager.default.temporaryDirectory
       .appendingPathComponent("VecturaHNSWKitTests")

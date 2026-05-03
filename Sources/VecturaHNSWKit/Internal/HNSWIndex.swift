@@ -6,7 +6,18 @@ struct HNSWScoredNode {
   let score: Float
 }
 
-struct HNSWNode {
+struct HNSWIndexSnapshot: Codable {
+  let formatVersion: Int
+  let dimension: Int
+  let config: HNSWConfig
+  let rng: SeededGenerator
+  let nodes: [HNSWNode]
+  let activeDocumentNodes: [UUID: Int]
+  let entryPoint: Int?
+  let maxLayer: Int
+}
+
+struct HNSWNode: Codable {
   let id: Int
   let documentID: UUID
   let vector: [Float]
@@ -55,6 +66,38 @@ final class HNSWIndex {
     for document in documents {
       try add(documentID: document.id, vector: document.embedding)
     }
+  }
+
+  func snapshot() -> HNSWIndexSnapshot {
+    HNSWIndexSnapshot(
+      formatVersion: 1,
+      dimension: dimension,
+      config: config,
+      rng: rng,
+      nodes: nodes,
+      activeDocumentNodes: activeDocumentNodes,
+      entryPoint: entryPoint,
+      maxLayer: maxLayer
+    )
+  }
+
+  func restore(from snapshot: HNSWIndexSnapshot) throws {
+    guard snapshot.formatVersion == 1 else {
+      throw HNSWStorageError.invalidConfiguration("Unsupported HNSW snapshot version")
+    }
+    guard snapshot.dimension == dimension else {
+      throw HNSWStorageError.invalidDimension(expected: dimension, actual: snapshot.dimension)
+    }
+    guard snapshot.config.m == config.m,
+          snapshot.config.metric == config.metric else {
+      throw HNSWStorageError.invalidConfiguration("HNSW snapshot config does not match storage config")
+    }
+
+    rng = snapshot.rng
+    nodes = snapshot.nodes
+    activeDocumentNodes = snapshot.activeDocumentNodes
+    entryPoint = snapshot.entryPoint
+    maxLayer = snapshot.maxLayer
   }
 
   @discardableResult

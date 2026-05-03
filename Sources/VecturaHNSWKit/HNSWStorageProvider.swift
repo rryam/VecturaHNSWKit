@@ -7,6 +7,7 @@ import VecturaKit
 /// Documents remain disk-backed through SQLite.
 public actor HNSWStorageProvider: IndexedVecturaStorage {
   public let directoryURL: URL
+  public let snapshotURL: URL
   public let dimension: Int
   public let config: HNSWConfig
 
@@ -16,13 +17,15 @@ public actor HNSWStorageProvider: IndexedVecturaStorage {
   public init(
     directoryURL: URL,
     dimension: Int,
-    config: HNSWConfig = .default
+    config: HNSWConfig = .default,
+    loadPersistedIndex: Bool = true
   ) throws {
     guard dimension > 0 else {
       throw HNSWStorageError.invalidConfiguration("dimension must be greater than 0")
     }
 
     self.directoryURL = directoryURL
+    self.snapshotURL = directoryURL.appendingPathComponent("hnsw-index.vkhnsw")
     self.dimension = dimension
     self.config = config
 
@@ -37,12 +40,49 @@ public actor HNSWStorageProvider: IndexedVecturaStorage {
     )
     self.index = try HNSWIndex(dimension: dimension, config: config)
 
+    if loadPersistedIndex, FileManager.default.fileExists(atPath: snapshotURL.path) {
+      let data = try Data(contentsOf: snapshotURL)
+      let snapshot = try PropertyListDecoder().decode(HNSWIndexSnapshot.self, from: data)
+      try index.restore(from: snapshot)
+    } else {
+      let documents = try store.loadActiveDocuments()
+      try index.rebuild(documents: documents)
+    }
+  }
+
+  public var stats: HNSWIndexStats {
+    let snapshotBytes = (try? FileManager.default.attributesOfItem(atPath: snapshotURL.path)[.size] as? NSNumber)?
+      .intValue
+    let current = index.stats
+    return HNSWIndexStats(
+      dimension: current.dimension,
+      documentCount: current.documentCount,
+      activeNodeCount: current.activeNodeCount,
+      deletedNodeCount: current.deletedNodeCount,
+      maxLayer: current.maxLayer,
+      snapshotBytes: snapshotBytes
+    )
+  }
+
+  /// Persists the current in-memory HNSW graph as a binary snapshot.
+  public func saveIndexSnapshot() async throws {
+    let snapshot = index.snapshot()
+    let encoder = PropertyListEncoder()
+    encoder.outputFormat = .binary
+    let data = try encoder.encode(snapshot)
+    try data.write(to: snapshotURL, options: .atomic)
+  }
+
+  /// Rebuilds the in-memory graph from active SQLite documents.
+  public func rebuildIndex() async throws {
     let documents = try store.loadActiveDocuments()
     try index.rebuild(documents: documents)
   }
 
-  public var stats: HNSWIndexStats {
-    index.stats
+  /// Rebuilds the graph from active documents and persists a fresh snapshot.
+  public func compactIndex() async throws {
+    try await rebuildIndex()
+    try await saveIndexSnapshot()
   }
 
   public func createStorageDirectoryIfNeeded() async throws {

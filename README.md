@@ -44,3 +44,30 @@ let vectura = try await VecturaKit(
 
 Use `VecturaConfig.MemoryStrategy.indexed` when you want VecturaKit's vector
 search path to ask the storage provider for HNSW candidates.
+
+## Benchmarks
+
+Run the benchmark executable in release mode:
+
+```sh
+swift run -c release vectura-hnsw-benchmark
+```
+
+The benchmark compares only:
+
+```text
+Plain VecturaKit exact vector scan
+VecturaKit using VecturaHNSWKit indexed storage
+```
+
+Useful overrides:
+
+```sh
+VECTURA_HNSW_BENCH_DOCS=10000 \
+VECTURA_HNSW_BENCH_DIM=384 \
+VECTURA_HNSW_BENCH_QUERIES=100 \
+swift run -c release vectura-hnsw-benchmark
+```
+
+The output includes search latency, recall@K against exact scan, insert time,
+snapshot write time, cold open time, and snapshot size.
