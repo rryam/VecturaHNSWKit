@@ -12,6 +12,7 @@ struct HNSWIndexSnapshot: Codable {
   let config: HNSWConfig
   let rng: SeededGenerator
   let nodes: [HNSWNode]
+  let vectors: [Float]
   let activeDocumentNodes: [UUID: Int]
   let entryPoint: Int?
   let maxLayer: Int
@@ -20,7 +21,6 @@ struct HNSWIndexSnapshot: Codable {
 struct HNSWNode: Codable {
   let id: Int
   let documentID: UUID
-  let vector: [Float]
   let level: Int
   var neighborsByLayer: [[Int]]
   var isDeleted: Bool
@@ -31,6 +31,7 @@ final class HNSWIndex {
   private let config: HNSWConfig
   private var rng: SeededGenerator
   private var nodes: [HNSWNode] = []
+  private var vectors: [Float] = []
   private var activeDocumentNodes: [UUID: Int] = [:]
   private var entryPoint: Int?
   private var maxLayer = -1
@@ -62,6 +63,7 @@ final class HNSWIndex {
 
   func rebuild(documents: [VecturaDocument]) throws {
     nodes.removeAll(keepingCapacity: true)
+    vectors.removeAll(keepingCapacity: true)
     activeDocumentNodes.removeAll(keepingCapacity: true)
     entryPoint = nil
     maxLayer = -1
@@ -79,6 +81,7 @@ final class HNSWIndex {
       config: config,
       rng: rng,
       nodes: nodes,
+      vectors: vectors,
       activeDocumentNodes: activeDocumentNodes,
       entryPoint: entryPoint,
       maxLayer: maxLayer
@@ -96,9 +99,13 @@ final class HNSWIndex {
           snapshot.config.metric == config.metric else {
       throw HNSWStorageError.invalidConfiguration("HNSW snapshot config does not match storage config")
     }
+    guard snapshot.vectors.count == snapshot.nodes.count * dimension else {
+      throw HNSWStorageError.invalidConfiguration("HNSW snapshot vector buffer is corrupt")
+    }
 
     rng = snapshot.rng
     nodes = snapshot.nodes
+    vectors = snapshot.vectors
     activeDocumentNodes = snapshot.activeDocumentNodes
     entryPoint = snapshot.entryPoint
     maxLayer = snapshot.maxLayer
@@ -116,12 +123,12 @@ final class HNSWIndex {
     let node = HNSWNode(
       id: nodeID,
       documentID: documentID,
-      vector: normalizedVector,
       level: nodeLevel,
       neighborsByLayer: Array(repeating: [], count: nodeLevel + 1),
       isDeleted: false
     )
     nodes.append(node)
+    vectors.append(contentsOf: normalizedVector)
     activeDocumentNodes[documentID] = nodeID
 
     guard let currentEntryPoint = entryPoint else {
@@ -146,7 +153,7 @@ final class HNSWIndex {
           ef: config.efConstruction,
           layer: layer
         )
-        let selected = selectNeighbors(for: normalizedVector, candidates: candidates, layer: layer)
+        let selected = selectNeighbors(candidates: candidates, layer: layer)
         connect(nodeID: nodeID, neighbors: selected, layer: layer)
         if let best = candidates.first {
           nearestEntry = best.id
@@ -283,7 +290,6 @@ final class HNSWIndex {
   }
 
   private func selectNeighbors(
-    for vector: [Float],
     candidates: [HNSWScoredNode],
     layer: Int
   ) -> [Int] {
@@ -319,10 +325,9 @@ final class HNSWIndex {
   }
 
   private func pruneNeighbors(of nodeID: Int, layer: Int) {
-    let baseVector = nodes[nodeID].vector
     var unique = Array(Set(nodes[nodeID].neighborsByLayer[layer]))
     unique.sort {
-      score(vector: baseVector, nodeID: $0) > score(vector: baseVector, nodeID: $1)
+      score(nodeID: nodeID, neighborID: $0) > score(nodeID: nodeID, neighborID: $1)
     }
     nodes[nodeID].neighborsByLayer[layer] = Array(unique.prefix(config.m))
   }
@@ -336,10 +341,21 @@ final class HNSWIndex {
   }
 
   private func score(query: [Float], nodeID: Int) -> Float {
-    VectorScoring.cosine(query, nodes[nodeID].vector)
+    let offset = nodeID * dimension
+    var score: Float = 0
+    for index in 0..<dimension {
+      score += query[index] * vectors[offset + index]
+    }
+    return score
   }
 
-  private func score(vector: [Float], nodeID: Int) -> Float {
-    VectorScoring.cosine(vector, nodes[nodeID].vector)
+  private func score(nodeID: Int, neighborID: Int) -> Float {
+    let lhsOffset = nodeID * dimension
+    let rhsOffset = neighborID * dimension
+    var score: Float = 0
+    for index in 0..<dimension {
+      score += vectors[lhsOffset + index] * vectors[rhsOffset + index]
+    }
+    return score
   }
 }
