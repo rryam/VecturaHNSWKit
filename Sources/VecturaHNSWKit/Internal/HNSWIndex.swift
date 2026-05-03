@@ -10,12 +10,64 @@ struct HNSWIndexSnapshot: Codable {
   let formatVersion: Int
   let dimension: Int
   let config: HNSWConfig
+  let documentRevision: Int64
   let rng: SeededGenerator
   let nodes: [HNSWNode]
   let vectors: [Float]
   let activeDocumentNodes: [UUID: Int]
   let entryPoint: Int?
   let maxLayer: Int
+
+  enum CodingKeys: String, CodingKey {
+    case formatVersion
+    case dimension
+    case config
+    case documentRevision
+    case rng
+    case nodes
+    case vectors
+    case activeDocumentNodes
+    case entryPoint
+    case maxLayer
+  }
+
+  init(
+    formatVersion: Int,
+    dimension: Int,
+    config: HNSWConfig,
+    documentRevision: Int64,
+    rng: SeededGenerator,
+    nodes: [HNSWNode],
+    vectors: [Float],
+    activeDocumentNodes: [UUID: Int],
+    entryPoint: Int?,
+    maxLayer: Int
+  ) {
+    self.formatVersion = formatVersion
+    self.dimension = dimension
+    self.config = config
+    self.documentRevision = documentRevision
+    self.rng = rng
+    self.nodes = nodes
+    self.vectors = vectors
+    self.activeDocumentNodes = activeDocumentNodes
+    self.entryPoint = entryPoint
+    self.maxLayer = maxLayer
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.formatVersion = try container.decode(Int.self, forKey: .formatVersion)
+    self.dimension = try container.decode(Int.self, forKey: .dimension)
+    self.config = try container.decode(HNSWConfig.self, forKey: .config)
+    self.documentRevision = try container.decodeIfPresent(Int64.self, forKey: .documentRevision) ?? -1
+    self.rng = try container.decode(SeededGenerator.self, forKey: .rng)
+    self.nodes = try container.decode([HNSWNode].self, forKey: .nodes)
+    self.vectors = try container.decode([Float].self, forKey: .vectors)
+    self.activeDocumentNodes = try container.decode([UUID: Int].self, forKey: .activeDocumentNodes)
+    self.entryPoint = try container.decodeIfPresent(Int.self, forKey: .entryPoint)
+    self.maxLayer = try container.decode(Int.self, forKey: .maxLayer)
+  }
 }
 
 struct HNSWNode: Codable {
@@ -74,11 +126,12 @@ final class HNSWIndex {
     }
   }
 
-  func snapshot() -> HNSWIndexSnapshot {
+  func snapshot(documentRevision: Int64) -> HNSWIndexSnapshot {
     HNSWIndexSnapshot(
-      formatVersion: 1,
+      formatVersion: 2,
       dimension: dimension,
       config: config,
+      documentRevision: documentRevision,
       rng: rng,
       nodes: nodes,
       vectors: vectors,
@@ -89,7 +142,7 @@ final class HNSWIndex {
   }
 
   func restore(from snapshot: HNSWIndexSnapshot) throws {
-    guard snapshot.formatVersion == 1 else {
+    guard snapshot.formatVersion == 1 || snapshot.formatVersion == 2 else {
       throw HNSWStorageError.invalidConfiguration("Unsupported HNSW snapshot version")
     }
     guard snapshot.dimension == dimension else {
@@ -226,6 +279,32 @@ final class HNSWIndex {
     }
 
     return results
+  }
+
+  func exactSearch(query: [Float], limit: Int) throws -> [UUID] {
+    guard limit > 0 else {
+      return []
+    }
+
+    let normalizedQuery = try VectorScoring.normalized(query, dimension: dimension)
+    var topNodes = HNSWScoredNodeHeap { $0.score < $1.score }
+
+    for nodeID in activeDocumentNodes.values {
+      guard nodes.indices.contains(nodeID), !nodes[nodeID].isDeleted else {
+        continue
+      }
+      let candidate = HNSWScoredNode(id: nodeID, score: score(query: normalizedQuery, nodeID: nodeID))
+      if topNodes.count < limit {
+        topNodes.insert(candidate)
+      } else if let worst = topNodes.peek, candidate.score > worst.score {
+        _ = topNodes.popRoot()
+        topNodes.insert(candidate)
+      }
+    }
+
+    return topNodes.unorderedElements
+      .sorted { $0.score > $1.score }
+      .map { nodes[$0.id].documentID }
   }
 
   private func randomLevel() -> Int {

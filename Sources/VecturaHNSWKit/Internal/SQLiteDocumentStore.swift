@@ -36,24 +36,34 @@ final class SQLiteDocumentStore {
     try validate(document)
     try withTransaction {
       try upsert(document)
+      try incrementDocumentRevision()
     }
   }
 
   func saveDocuments(_ documents: [VecturaDocument]) throws {
+    guard !documents.isEmpty else {
+      return
+    }
     try documents.forEach(validate)
     try withTransaction {
       for document in documents {
         try upsert(document)
       }
+      try incrementDocumentRevision()
     }
   }
 
   func deleteDocument(id: UUID) throws {
-    let statement = try prepare("UPDATE documents SET active = 0 WHERE id = ?")
-    defer { sqlite3_finalize(statement) }
+    try withTransaction {
+      let statement = try prepare("UPDATE documents SET active = 0 WHERE id = ? AND active = 1")
+      defer { sqlite3_finalize(statement) }
 
-    sqlite3_bind_text(statement, 1, id.uuidString, -1, sqliteTransient)
-    try stepDone(statement)
+      sqlite3_bind_text(statement, 1, id.uuidString, -1, sqliteTransient)
+      try stepDone(statement)
+      if sqlite3_changes(database) > 0 {
+        try incrementDocumentRevision()
+      }
+    }
   }
 
   func loadActiveDocuments() throws -> [VecturaDocument] {
@@ -82,12 +92,43 @@ final class SQLiteDocumentStore {
   }
 
   func loadDocuments(ids: [UUID]) throws -> [UUID: VecturaDocument] {
+    guard !ids.isEmpty else {
+      return [:]
+    }
+
     var results: [UUID: VecturaDocument] = [:]
-    for id in ids {
-      if let document = try loadDocument(id: id) {
-        results[id] = document
+
+    if ids.count <= 512 {
+      for id in ids {
+        if let document = try loadDocument(id: id) {
+          results[id] = document
+        }
+      }
+      return results
+    }
+
+    for startIndex in stride(from: 0, to: ids.count, by: 500) {
+      let endIndex = min(startIndex + 500, ids.count)
+      let chunk = Array(ids[startIndex..<endIndex])
+      let placeholders = Array(repeating: "?", count: chunk.count).joined(separator: ", ")
+      let documents = try loadDocuments(
+        sql: """
+        SELECT id, text, embedding, created_at
+        FROM documents
+        WHERE active = 1 AND id IN (\(placeholders))
+        """,
+        bind: { statement in
+          for (index, id) in chunk.enumerated() {
+            sqlite3_bind_text(statement, Int32(index + 1), id.uuidString, -1, sqliteTransient)
+          }
+        }
+      )
+
+      for document in documents {
+        results[document.id] = document
       }
     }
+
     return results
   }
 
@@ -120,6 +161,17 @@ final class SQLiteDocumentStore {
     return Int(sqlite3_column_int64(statement, 0))
   }
 
+  func currentDocumentRevision() throws -> Int64 {
+    let statement = try prepare("SELECT value FROM metadata WHERE key = 'documentRevision' LIMIT 1")
+    defer { sqlite3_finalize(statement) }
+
+    guard sqlite3_step(statement) == SQLITE_ROW, let value = sqlite3_column_text(statement, 0) else {
+      return 0
+    }
+
+    return Int64(String(cString: value)) ?? 0
+  }
+
   func documentExists(id: UUID) throws -> Bool {
     let statement = try prepare("SELECT 1 FROM documents WHERE active = 1 AND id = ? LIMIT 1")
     defer { sqlite3_finalize(statement) }
@@ -150,6 +202,7 @@ final class SQLiteDocumentStore {
       """
     )
     try setMetadata(key: "dimension", value: String(dimension))
+    try setMetadataIfMissing(key: "documentRevision", value: "0")
   }
 
   private func setMetadata(key: String, value: String) throws {
@@ -165,6 +218,25 @@ final class SQLiteDocumentStore {
     sqlite3_bind_text(statement, 1, key, -1, sqliteTransient)
     sqlite3_bind_text(statement, 2, value, -1, sqliteTransient)
     try stepDone(statement)
+  }
+
+  private func setMetadataIfMissing(key: String, value: String) throws {
+    let statement = try prepare(
+      """
+      INSERT OR IGNORE INTO metadata(key, value)
+      VALUES(?, ?)
+      """
+    )
+    defer { sqlite3_finalize(statement) }
+
+    sqlite3_bind_text(statement, 1, key, -1, sqliteTransient)
+    sqlite3_bind_text(statement, 2, value, -1, sqliteTransient)
+    try stepDone(statement)
+  }
+
+  private func incrementDocumentRevision() throws {
+    let currentRevision = try currentDocumentRevision()
+    try setMetadata(key: "documentRevision", value: String(currentRevision + 1))
   }
 
   private func upsert(_ document: VecturaDocument) throws {

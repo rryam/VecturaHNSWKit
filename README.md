@@ -46,11 +46,12 @@ VecturaHNSWKit.
 ## Features
 
 - HNSW candidate search for VecturaKit indexed mode
+- adaptive exact candidate selection for small corpora
 - `IndexedVecturaStorage` conformance
 - SQLite-backed document persistence
-- binary HNSW index snapshots
+- binary HNSW index snapshots with SQLite revision validation
 - startup recovery policies
-- tombstone deletes and update-as-reinsert behavior
+- tombstone deletes with automatic compaction controls
 - rebuild and compaction APIs
 - benchmark executable against plain VecturaKit exact scan
 - pure Swift package with a small public API
@@ -61,7 +62,7 @@ Add VecturaHNSWKit to your package:
 
 ```swift
 dependencies: [
-  .package(url: "https://github.com/rryam/VecturaHNSWKit.git", from: "1.0.0"),
+  .package(url: "https://github.com/rryam/VecturaHNSWKit.git", from: "1.1.0"),
 ]
 ```
 
@@ -120,7 +121,10 @@ storage backend that can answer `searchVectorCandidates(...)` quickly.
 let hnswConfig = try HNSWConfig(
   m: 16,
   efConstruction: 200,
-  efSearch: 128
+  efSearch: 128,
+  exactSearchThreshold: 10_000,
+  automaticCompactionDeletedRatio: 0.30,
+  automaticCompactionMinimumDeletedCount: 1_000
 )
 ```
 
@@ -132,8 +136,16 @@ The important knobs:
   graph but slow ingestion.
 - `efSearch`: query-time search breadth. Higher values improve recall but slow
   search.
-- `candidateMultiplier`: VecturaKit indexed-mode multiplier. The storage layer
-  returns `topK * candidateMultiplier` candidates for exact rescoring.
+- `exactSearchThreshold`: document-count threshold where VecturaHNSWKit uses
+  exact in-memory candidate selection instead of graph traversal. The default
+  keeps small corpora fast and exact.
+- `automaticCompactionDeletedRatio`: deleted-node ratio that triggers automatic
+  graph compaction.
+- `automaticCompactionMinimumDeletedCount`: minimum tombstone count before
+  automatic compaction can run.
+- `candidateMultiplier`: VecturaKit indexed-mode multiplier. Graph search uses
+  it to return `topK * candidateMultiplier` candidates for exact rescoring;
+  exact fallback returns `topK` because it has already selected exact neighbors.
 
 For speed, start with:
 
@@ -159,8 +171,8 @@ try await storage.compactIndex()
 ```
 
 The default recovery policy is `.validateSnapshotIfAvailable`. It loads the
-snapshot when possible, checks it against active SQLite documents, and rebuilds
-from SQLite if the snapshot is stale.
+snapshot when possible, checks its SQLite document revision and active document
+IDs, and rebuilds from SQLite if the snapshot is stale.
 
 ```swift
 let storage = try HNSWStorageProvider(
@@ -207,41 +219,57 @@ swift run -c release vectura-hnsw-benchmark
 Local 25K x 384D speed preset:
 
 ```text
-Plain VecturaKit exact scan avg: 7.956 ms
-VecturaHNSWKit candidates only avg: 0.895 ms
-VecturaHNSWKit full avg: 1.476 ms
-recall@10: 0.7900
+Plain VecturaKit exact scan avg: 9.460 ms
+VecturaHNSWKit candidates only avg: 1.141 ms
+VecturaHNSWKit full avg: 1.681 ms
+recall@10: 0.7800
 ```
 
-Local 10K x 384D high-recall preset after optimization:
+Local 10K x 384D high-recall preset:
 
 ```text
-Plain VecturaKit exact scan avg: 2.548 ms
-VecturaHNSWKit candidates only avg: 1.620 ms
-VecturaHNSWKit full avg: 2.780 ms
+Plain VecturaKit exact scan avg: 2.123 ms
+VecturaHNSWKit candidates only avg: 1.430 ms
+VecturaHNSWKit full avg: 1.441 ms
 recall@10: 1.0000
 ```
 
-The current story is honest: HNSW can dramatically reduce latency at larger
-corpus sizes, but recall depends on graph construction and tuning. See
+Local 25K x 384D wider-search preset:
+
+```text
+Plain VecturaKit exact scan avg: 7.776 ms
+VecturaHNSWKit candidates only avg: 2.515 ms
+VecturaHNSWKit full avg: 3.790 ms
+recall@10: 0.9750
+```
+
+The benchmark story is deliberately measurable: small corpora use exact
+candidate selection, larger corpora use the graph, and recall is reported
+instead of implied. See
 [Benchmarks/README.md](Benchmarks/README.md),
 [Benchmarks/RESULTS.md](Benchmarks/RESULTS.md), and
 [Benchmarks/OPTIMIZATION_RESULTS.md](Benchmarks/OPTIMIZATION_RESULTS.md).
 
-## Current Limits
+## Production Behavior
 
-VecturaHNSWKit is useful today, but it is still early indexing infrastructure:
+VecturaHNSWKit treats SQLite as the source of truth and the HNSW graph as a
+recoverable acceleration structure.
 
-- high-recall search can be slower than exact scan on small corpora
-- ingestion is slower than plain VecturaKit because graph construction does real
-  work
-- deletes are tombstoned and cleaned up through compaction
-- graph snapshots are validated against SQLite, but SQLite and the graph are not
-  a single transactional unit
-- recall at larger sizes needs continued graph-construction work
+- Small corpora use exact candidate selection by default, backed by a bounded
+  topK heap, so indexed mode does not pay graph traversal overhead too early.
+- Larger corpora use HNSW graph traversal. Tune `m`, `efConstruction`,
+  `efSearch`, and VecturaKit's `candidateMultiplier` based on the latency/recall
+  target you need.
+- Deletes are tombstoned for fast writes and compact automatically once the
+  configured deleted-node threshold is reached. `compactIndex()` is still
+  available for explicit maintenance.
+- Snapshots carry the SQLite document revision. Validated recovery rejects stale
+  snapshots after inserts, deletes, or updates, then rebuilds from SQLite.
+- Ingestion is expected to be slower than exact storage because graph
+  construction does real neighbor search and link maintenance.
 
-Those tradeoffs are deliberate for now. The package keeps correctness,
-recoverability, and measurable benchmarks ahead of vague performance claims.
+The package is built to make these tradeoffs explicit: correctness and
+recoverability first, with benchmarks for every performance claim.
 
 ## Public API
 

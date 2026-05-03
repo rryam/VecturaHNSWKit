@@ -31,3 +31,12 @@
 - [x] Add final benchmark docs.
 - [x] Run full build, test, and benchmark pass.
 - [x] Commit 1.0.
+
+## 1.1
+
+- [x] Add exact candidate fallback for small corpora.
+- [x] Add bounded topK heap for exact fallback.
+- [x] Add automatic tombstone compaction policy.
+- [x] Validate snapshots with SQLite document revisions.
+- [x] Tune candidate document loading for normal and large ID lists.
+- [x] Re-run release benchmarks against plain VecturaKit exact scan.

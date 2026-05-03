@@ -18,11 +18,12 @@ Environment options:
 | `VECTURA_HNSW_BENCH_M` | `16` | HNSW neighbor count |
 | `VECTURA_HNSW_BENCH_EF_CONSTRUCTION` | `200` | Insert-time search breadth |
 | `VECTURA_HNSW_BENCH_EF_SEARCH` | `128` | Query-time search breadth |
+| `VECTURA_HNSW_BENCH_EXACT_THRESHOLD` | `10000` | Document-count threshold for exact candidate fallback |
 
 The benchmark reports:
 
 - exact scan latency
-- pure HNSW candidate lookup latency
+- public VecturaHNSWKit candidate lookup latency
 - HNSW-backed VecturaKit latency
 - candidate recall@K before exact rescoring
 - recall@1

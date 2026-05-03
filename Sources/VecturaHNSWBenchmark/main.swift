@@ -47,7 +47,8 @@ struct VecturaHNSWBenchmark {
       config: try HNSWConfig(
         m: options.m,
         efConstruction: options.efConstruction,
-        efSearch: options.efSearch
+        efSearch: options.efSearch,
+        exactSearchThreshold: options.exactSearchThreshold
       )
     )
 
@@ -68,7 +69,8 @@ struct VecturaHNSWBenchmark {
     let hnswCandidateRun = try await measureCandidateSearch(
       storage: hnswStorage,
       queryVectors: queryVectors,
-      limit: options.topK * options.candidateMultiplier
+      topK: options.topK,
+      prefilterSize: options.topK * options.candidateMultiplier
     )
     let hnswRun = try await measureSearch(engine: hnsw, queryVectors: queryVectors, topK: options.topK)
     let recallAtOne = averageRecall(exact: exactRun.ids, candidate: hnswRun.ids, at: 1)
@@ -86,7 +88,8 @@ struct VecturaHNSWBenchmark {
         config: try HNSWConfig(
           m: options.m,
           efConstruction: options.efConstruction,
-          efSearch: options.efSearch
+          efSearch: options.efSearch,
+          exactSearchThreshold: options.exactSearchThreshold
         ),
         recoveryPolicy: .loadSnapshotIfAvailable
       )
@@ -103,6 +106,7 @@ struct VecturaHNSWBenchmark {
       queries: \(options.queryCount)
       topK: \(options.topK)
       candidateMultiplier: \(options.candidateMultiplier)
+      exactSearchThreshold: \(options.exactSearchThreshold)
 
       | Engine | avg ms | p50 ms | p95 ms | p99 ms |
       | --- | ---: | ---: | ---: | ---: |
@@ -167,7 +171,8 @@ struct VecturaHNSWBenchmark {
   private static func measureCandidateSearch(
     storage: HNSWStorageProvider,
     queryVectors: [[Float]],
-    limit: Int
+    topK: Int,
+    prefilterSize: Int
   ) async throws -> (timings: TimingSummary, ids: [[UUID]]) {
     var timings: [TimeInterval] = []
     var ids: [[UUID]] = []
@@ -176,7 +181,11 @@ struct VecturaHNSWBenchmark {
 
     for queryVector in queryVectors {
       let start = Date()
-      let results = try await storage.searchDocumentIDs(queryEmbedding: queryVector, limit: limit)
+      let results = try await storage.searchVectorCandidates(
+        queryEmbedding: queryVector,
+        topK: topK,
+        prefilterSize: prefilterSize
+      ) ?? []
       timings.append(Date().timeIntervalSince(start))
       ids.append(results)
     }
@@ -229,6 +238,7 @@ struct BenchmarkOptions {
   let m: Int
   let efConstruction: Int
   let efSearch: Int
+  let exactSearchThreshold: Int
 
   static func fromEnvironment() -> BenchmarkOptions {
     let environment = ProcessInfo.processInfo.environment
@@ -240,7 +250,8 @@ struct BenchmarkOptions {
       candidateMultiplier: environment.integer("VECTURA_HNSW_BENCH_CANDIDATE_MULTIPLIER", default: 8),
       m: environment.integer("VECTURA_HNSW_BENCH_M", default: 16),
       efConstruction: environment.integer("VECTURA_HNSW_BENCH_EF_CONSTRUCTION", default: 200),
-      efSearch: environment.integer("VECTURA_HNSW_BENCH_EF_SEARCH", default: 128)
+      efSearch: environment.integer("VECTURA_HNSW_BENCH_EF_SEARCH", default: 128),
+      exactSearchThreshold: environment.integer("VECTURA_HNSW_BENCH_EXACT_THRESHOLD", default: 10_000)
     )
   }
 }

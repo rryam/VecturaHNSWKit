@@ -87,6 +87,26 @@ struct HNSWStorageProviderTests {
     #expect(try await storage.documentExists(id: apple.id) == false)
   }
 
+  @Test("loads requested documents in batches")
+  func loadsRequestedDocumentsInBatches() async throws {
+    let directory = try temporaryDirectory()
+    let storage = try HNSWStorageProvider(directoryURL: directory, dimension: 3)
+
+    let documents = (0..<520).map { index in
+      VecturaDocument(
+        text: "doc-\(index)",
+        embedding: [1, Float(index % 7), Float(index % 3)]
+      )
+    }
+    try await storage.saveDocuments(documents)
+
+    let loaded = try await storage.loadDocuments(ids: documents.map(\.id))
+
+    #expect(loaded.count == documents.count)
+    #expect(loaded[documents[0].id]?.text == "doc-0")
+    #expect(loaded[documents[519].id]?.text == "doc-519")
+  }
+
   @Test("snapshot can be saved and loaded on reopen")
   func snapshotCanBeSavedAndLoadedOnReopen() async throws {
     let directory = try temporaryDirectory()
@@ -155,6 +175,68 @@ struct HNSWStorageProviderTests {
 
     #expect(report.loadedSnapshot == true)
     #expect(report.rebuiltFromDocuments == true)
+    #expect(candidates?.first == banana.id)
+  }
+
+  @Test("validated recovery rebuilds snapshot after document update")
+  func validatedRecoveryRebuildsSnapshotAfterDocumentUpdate() async throws {
+    let directory = try temporaryDirectory()
+    let config = try HNSWConfig(exactSearchThreshold: 0)
+    let storage = try HNSWStorageProvider(directoryURL: directory, dimension: 3, config: config)
+    let id = UUID()
+    let old = VecturaDocument(id: id, text: "old", embedding: [1, 0, 0])
+    let updated = VecturaDocument(id: id, text: "updated", embedding: [0, 1, 0])
+
+    try await storage.saveDocument(old)
+    try await storage.saveIndexSnapshot()
+    try await storage.saveDocument(updated)
+
+    let reopened = try HNSWStorageProvider(
+      directoryURL: directory,
+      dimension: 3,
+      config: config,
+      recoveryPolicy: .validateSnapshotIfAvailable
+    )
+
+    let report = await reopened.recoveryReport
+    let candidates = try await reopened.searchVectorCandidates(
+      queryEmbedding: [0, 1, 0],
+      topK: 1,
+      prefilterSize: 1
+    )
+    let document = try await reopened.getDocument(id: id)
+
+    #expect(report.loadedSnapshot == true)
+    #expect(report.rebuiltFromDocuments == true)
+    #expect(report.reason == "Snapshot revision did not match SQLite")
+    #expect(candidates?.first == id)
+    #expect(document?.text == "updated")
+  }
+
+  @Test("automatic compaction removes deleted nodes")
+  func automaticCompactionRemovesDeletedNodes() async throws {
+    let directory = try temporaryDirectory()
+    let config = try HNSWConfig(
+      automaticCompactionDeletedRatio: 0,
+      automaticCompactionMinimumDeletedCount: 1
+    )
+    let storage = try HNSWStorageProvider(directoryURL: directory, dimension: 3, config: config)
+    let apple = VecturaDocument(text: "apple", embedding: [1, 0, 0])
+    let banana = VecturaDocument(text: "banana", embedding: [0, 1, 0])
+
+    try await storage.saveDocuments([apple, banana])
+    try await storage.deleteDocument(withID: apple.id)
+
+    let stats = await storage.stats
+    let candidates = try await storage.searchVectorCandidates(
+      queryEmbedding: [0, 1, 0],
+      topK: 1,
+      prefilterSize: 1
+    )
+
+    #expect(stats.deletedNodeCount == 0)
+    #expect(stats.activeNodeCount == 1)
+    #expect((stats.snapshotBytes ?? 0) > 0)
     #expect(candidates?.first == banana.id)
   }
 

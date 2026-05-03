@@ -28,10 +28,11 @@ swift run -c release vectura-hnsw-benchmark
 | Contiguous vector buffer | 2.090 | n/a | 2.662 | 0.9920 |
 | Candidate-only benchmark split | 3.278 | 2.012 | 3.483 | 1.0000 |
 | Diversified neighbors + capped ground layer | 2.548 | 1.620 | 2.780 | 1.0000 |
+| 1.1 exact fallback + bounded topK heap | 2.123 | 1.430 | 1.441 | 1.0000 |
 
-The candidate-only row shows that the graph lookup can be faster than exact scan
-at this size, while full VecturaKit indexed search still pays for candidate
-document loading and exact rescoring.
+The 1.1 row uses exact candidate fallback at 10K. Since that path already knows
+the exact topK, it returns only `topK` candidates for rescoring instead of the
+wider graph prefilter set.
 
 ## Larger Corpus Presets
 
@@ -47,14 +48,14 @@ swift run -c release vectura-hnsw-benchmark
 
 | Engine | avg ms | p50 ms | p95 ms | p99 ms |
 | --- | ---: | ---: | ---: | ---: |
-| Plain VecturaKit exact scan | 7.956 | 8.200 | 8.878 | 9.288 |
-| VecturaHNSWKit candidates only | 0.895 | 0.908 | 1.063 | 1.097 |
-| VecturaHNSWKit | 1.476 | 1.470 | 1.719 | 1.749 |
+| Plain VecturaKit exact scan | 9.460 | 9.491 | 10.820 | 13.213 |
+| VecturaHNSWKit candidates only | 1.141 | 1.067 | 1.531 | 1.537 |
+| VecturaHNSWKit | 1.681 | 1.621 | 2.019 | 2.079 |
 
 ```text
-candidate recall@10: 0.7900
+candidate recall@10: 0.7800
 recall@1: 1.0000
-recall@10: 0.7900
+recall@10: 0.7800
 ```
 
 ### 25K Wider-Search Preset
@@ -64,22 +65,24 @@ VECTURA_HNSW_BENCH_DOCS=25000 \
 VECTURA_HNSW_BENCH_DIM=384 \
 VECTURA_HNSW_BENCH_QUERIES=20 \
 VECTURA_HNSW_BENCH_CANDIDATE_MULTIPLIER=20 \
-VECTURA_HNSW_BENCH_EF_SEARCH=256 \
+VECTURA_HNSW_BENCH_M=32 \
+VECTURA_HNSW_BENCH_EF_CONSTRUCTION=400 \
+VECTURA_HNSW_BENCH_EF_SEARCH=400 \
 swift run -c release vectura-hnsw-benchmark
 ```
 
 | Engine | avg ms | p50 ms | p95 ms | p99 ms |
 | --- | ---: | ---: | ---: | ---: |
-| Plain VecturaKit exact scan | 7.908 | 8.177 | 8.707 | 9.449 |
-| VecturaHNSWKit candidates only | 1.731 | 1.730 | 1.966 | 2.131 |
-| VecturaHNSWKit | 3.013 | 3.109 | 3.252 | 3.373 |
+| Plain VecturaKit exact scan | 7.776 | 6.969 | 13.803 | 14.782 |
+| VecturaHNSWKit candidates only | 2.515 | 2.545 | 2.722 | 2.750 |
+| VecturaHNSWKit | 3.790 | 3.790 | 3.985 | 4.018 |
 
 ```text
-candidate recall@10: 0.8400
+candidate recall@10: 0.9750
 recall@1: 1.0000
-recall@10: 0.8400
+recall@10: 0.9750
 ```
 
-Diversified construction plus a capped 32-neighbor ground layer improved 25K
-recall substantially. The tradeoff is slower graph construction and a modest
-query-time increase from walking more ground-layer edges.
+Diversified construction, a capped 32-neighbor ground layer, and wider query
+breadth improve 25K recall substantially. The tradeoff is slower graph
+construction and higher query latency than the speed preset.

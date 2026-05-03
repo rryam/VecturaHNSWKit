@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.0
+
+- Adds adaptive exact candidate selection for small corpora.
+- Uses a bounded topK heap for exact fallback instead of sorting every vector.
+- Adds automatic tombstone compaction controls.
+- Tags HNSW snapshots with SQLite document revisions and rebuilds stale snapshots.
+- Uses cached point lookup for normal candidate loads and batched SQL for large ID loads.
+- Updates benchmark reporting to measure the public candidate path.
+
 ## 1.0.0
 
 - Freezes the initial public API:

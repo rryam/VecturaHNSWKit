@@ -3,8 +3,9 @@ import VecturaKit
 
 /// SQLite-backed Vectura storage provider with HNSW candidate search.
 ///
-/// Version 0.1 keeps the HNSW graph in memory and rebuilds it from SQLite on open.
-/// Documents remain disk-backed through SQLite.
+/// Documents are disk-backed through SQLite. The HNSW graph is kept in memory
+/// for fast candidate lookup and can be restored from a validated snapshot or
+/// rebuilt from SQLite when needed.
 public actor HNSWStorageProvider: IndexedVecturaStorage {
   public let directoryURL: URL
   public let snapshotURL: URL
@@ -65,7 +66,7 @@ public actor HNSWStorageProvider: IndexedVecturaStorage {
 
   /// Persists the current in-memory HNSW graph as a binary snapshot.
   public func saveIndexSnapshot() async throws {
-    let snapshot = index.snapshot()
+    let snapshot = index.snapshot(documentRevision: try store.currentDocumentRevision())
     let encoder = PropertyListEncoder()
     encoder.outputFormat = .binary
     let data = try encoder.encode(snapshot)
@@ -112,7 +113,7 @@ public actor HNSWStorageProvider: IndexedVecturaStorage {
           reason: "Snapshot not found"
         )
       }
-      try loadSnapshot(into: index, snapshotURL: snapshotURL)
+      _ = try loadSnapshot(into: index, snapshotURL: snapshotURL)
       return HNSWRecoveryReport(
         policy: policy,
         loadedSnapshot: true,
@@ -132,8 +133,19 @@ public actor HNSWStorageProvider: IndexedVecturaStorage {
         )
       }
 
-      try loadSnapshot(into: index, snapshotURL: snapshotURL)
+      let snapshot = try loadSnapshot(into: index, snapshotURL: snapshotURL)
       let documents = try store.loadActiveDocuments()
+      let currentRevision = try store.currentDocumentRevision()
+      guard snapshot.documentRevision == currentRevision else {
+        try index.rebuild(documents: documents)
+        return HNSWRecoveryReport(
+          policy: policy,
+          loadedSnapshot: true,
+          rebuiltFromDocuments: true,
+          reason: "Snapshot revision did not match SQLite"
+        )
+      }
+
       let activeIDs = Set(documents.map(\.id))
       guard index.activeDocumentIDs == activeIDs else {
         try index.rebuild(documents: documents)
@@ -154,10 +166,11 @@ public actor HNSWStorageProvider: IndexedVecturaStorage {
     }
   }
 
-  private static func loadSnapshot(into index: HNSWIndex, snapshotURL: URL) throws {
+  private static func loadSnapshot(into index: HNSWIndex, snapshotURL: URL) throws -> HNSWIndexSnapshot {
     let data = try Data(contentsOf: snapshotURL)
     let snapshot = try PropertyListDecoder().decode(HNSWIndexSnapshot.self, from: data)
     try index.restore(from: snapshot)
+    return snapshot
   }
 
   public func createStorageDirectoryIfNeeded() async throws {
@@ -174,20 +187,33 @@ public actor HNSWStorageProvider: IndexedVecturaStorage {
   public func saveDocument(_ document: VecturaDocument) async throws {
     try validate(document)
     try store.saveDocument(document)
-    try index.add(documentID: document.id, vector: document.embedding)
+    do {
+      try index.add(documentID: document.id, vector: document.embedding)
+      try await compactIndexIfNeeded()
+    } catch {
+      try? index.rebuild(documents: store.loadActiveDocuments())
+      throw error
+    }
   }
 
   public func saveDocuments(_ documents: [VecturaDocument]) async throws {
     try documents.forEach(validate)
     try store.saveDocuments(documents)
-    for document in documents {
-      try index.add(documentID: document.id, vector: document.embedding)
+    do {
+      for document in documents {
+        try index.add(documentID: document.id, vector: document.embedding)
+      }
+      try await compactIndexIfNeeded()
+    } catch {
+      try? index.rebuild(documents: store.loadActiveDocuments())
+      throw error
     }
   }
 
   public func deleteDocument(withID id: UUID) async throws {
     try store.deleteDocument(id: id)
     index.markDeleted(documentID: id)
+    try await compactIndexIfNeeded()
   }
 
   public func updateDocument(_ document: VecturaDocument) async throws {
@@ -219,7 +245,14 @@ public actor HNSWStorageProvider: IndexedVecturaStorage {
     topK: Int,
     prefilterSize: Int
   ) async throws -> [UUID]? {
-    try await searchDocumentIDs(
+    if shouldUseExactCandidateSearch {
+      return try index.exactSearch(
+        query: queryEmbedding,
+        limit: topK
+      )
+    }
+
+    return try await searchDocumentIDs(
       queryEmbedding: queryEmbedding,
       limit: max(topK, prefilterSize)
     )
@@ -238,6 +271,32 @@ public actor HNSWStorageProvider: IndexedVecturaStorage {
     }
 
     return try index.search(query: queryEmbedding, limit: limit, efSearch: max(limit, config.efSearch))
+  }
+
+  private var shouldUseExactCandidateSearch: Bool {
+    guard config.exactSearchThreshold > 0 else {
+      return false
+    }
+    return index.stats.documentCount <= config.exactSearchThreshold
+  }
+
+  private func compactIndexIfNeeded() async throws {
+    let stats = index.stats
+    guard stats.deletedNodeCount >= config.automaticCompactionMinimumDeletedCount else {
+      return
+    }
+
+    let totalNodeCount = stats.activeNodeCount + stats.deletedNodeCount
+    guard totalNodeCount > 0 else {
+      return
+    }
+
+    let deletedRatio = Double(stats.deletedNodeCount) / Double(totalNodeCount)
+    guard deletedRatio >= config.automaticCompactionDeletedRatio else {
+      return
+    }
+
+    try await compactIndex()
   }
 
   private func validate(_ document: VecturaDocument) throws {
