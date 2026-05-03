@@ -22,7 +22,9 @@ Environment options:
 The benchmark reports:
 
 - exact scan latency
+- pure HNSW candidate lookup latency
 - HNSW-backed VecturaKit latency
+- candidate recall@K before exact rescoring
 - recall@1
 - recall@K
 - insert time
@@ -30,4 +32,5 @@ The benchmark reports:
 - cold open time
 - snapshot size
 
-See [RESULTS.md](RESULTS.md) for local result snapshots.
+See [RESULTS.md](RESULTS.md) and [OPTIMIZATION_RESULTS.md](OPTIMIZATION_RESULTS.md)
+for local result snapshots.

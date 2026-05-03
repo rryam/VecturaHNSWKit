@@ -219,13 +219,25 @@ public actor HNSWStorageProvider: IndexedVecturaStorage {
     topK: Int,
     prefilterSize: Int
   ) async throws -> [UUID]? {
+    try await searchDocumentIDs(
+      queryEmbedding: queryEmbedding,
+      limit: max(topK, prefilterSize)
+    )
+  }
+
+  /// Searches the HNSW graph directly and returns document IDs without loading documents.
+  ///
+  /// This is useful for measuring pure index lookup cost or for callers that want
+  /// to perform their own candidate loading and rescoring.
+  public func searchDocumentIDs(
+    queryEmbedding: [Float],
+    limit: Int
+  ) async throws -> [UUID] {
     guard queryEmbedding.count == dimension else {
       throw HNSWStorageError.invalidDimension(expected: dimension, actual: queryEmbedding.count)
     }
 
-    let limit = max(topK, prefilterSize)
-    let candidates = try index.search(query: queryEmbedding, limit: limit, efSearch: max(limit, config.efSearch))
-    return candidates
+    return try index.search(query: queryEmbedding, limit: limit, efSearch: max(limit, config.efSearch))
   }
 
   private func validate(_ document: VecturaDocument) throws {

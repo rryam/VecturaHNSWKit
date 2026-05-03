@@ -65,9 +65,19 @@ struct VecturaHNSWBenchmark {
     }
 
     let exactRun = try await measureSearch(engine: exact, queryVectors: queryVectors, topK: options.topK)
+    let hnswCandidateRun = try await measureCandidateSearch(
+      storage: hnswStorage,
+      queryVectors: queryVectors,
+      limit: options.topK * options.candidateMultiplier
+    )
     let hnswRun = try await measureSearch(engine: hnsw, queryVectors: queryVectors, topK: options.topK)
     let recallAtOne = averageRecall(exact: exactRun.ids, candidate: hnswRun.ids, at: 1)
     let recallAtK = averageRecall(exact: exactRun.ids, candidate: hnswRun.ids, at: options.topK)
+    let candidateRecallAtK = averageCandidateRecall(
+      exact: exactRun.ids,
+      candidates: hnswCandidateRun.ids,
+      at: options.topK
+    )
 
     let coldOpen = try timedSync {
       _ = try HNSWStorageProvider(
@@ -97,8 +107,10 @@ struct VecturaHNSWBenchmark {
       | Engine | avg ms | p50 ms | p95 ms | p99 ms |
       | --- | ---: | ---: | ---: | ---: |
       | Plain VecturaKit exact scan | \(exactRun.timings.average.ms) | \(exactRun.timings.p50.ms) | \(exactRun.timings.p95.ms) | \(exactRun.timings.p99.ms) |
+      | VecturaHNSWKit candidates only | \(hnswCandidateRun.timings.average.ms) | \(hnswCandidateRun.timings.p50.ms) | \(hnswCandidateRun.timings.p95.ms) | \(hnswCandidateRun.timings.p99.ms) |
       | VecturaHNSWKit | \(hnswRun.timings.average.ms) | \(hnswRun.timings.p50.ms) | \(hnswRun.timings.p95.ms) | \(hnswRun.timings.p99.ms) |
 
+      candidate recall@\(options.topK): \(String(format: "%.4f", candidateRecallAtK))
       recall@1: \(String(format: "%.4f", recallAtOne))
       recall@\(options.topK): \(String(format: "%.4f", recallAtK))
       plain insert: \(exactInsert.ms) ms
@@ -145,6 +157,44 @@ struct VecturaHNSWBenchmark {
         return partial + 1
       }
       let actual = Set(pair.1.prefix(k))
+      return partial + Double(expected.intersection(actual).count) / Double(expected.count)
+    }
+
+    return total / Double(exact.count)
+  }
+
+  @MainActor
+  private static func measureCandidateSearch(
+    storage: HNSWStorageProvider,
+    queryVectors: [[Float]],
+    limit: Int
+  ) async throws -> (timings: TimingSummary, ids: [[UUID]]) {
+    var timings: [TimeInterval] = []
+    var ids: [[UUID]] = []
+    timings.reserveCapacity(queryVectors.count)
+    ids.reserveCapacity(queryVectors.count)
+
+    for queryVector in queryVectors {
+      let start = Date()
+      let results = try await storage.searchDocumentIDs(queryEmbedding: queryVector, limit: limit)
+      timings.append(Date().timeIntervalSince(start))
+      ids.append(results)
+    }
+
+    return (TimingSummary(values: timings), ids)
+  }
+
+  private static func averageCandidateRecall(exact: [[UUID]], candidates: [[UUID]], at k: Int) -> Double {
+    guard !exact.isEmpty else {
+      return 1
+    }
+
+    let total = zip(exact, candidates).reduce(0.0) { partial, pair in
+      let expected = Set(pair.0.prefix(k))
+      guard !expected.isEmpty else {
+        return partial + 1
+      }
+      let actual = Set(pair.1)
       return partial + Double(expected.intersection(actual).count) / Double(expected.count)
     }
 
