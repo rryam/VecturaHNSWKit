@@ -68,6 +68,68 @@ struct HNSWStorageProviderTests {
     #expect(results.first?.text == "apple")
   }
 
+  @Test("searchText returns ranked SQLite text results")
+  func searchTextReturnsRankedSQLiteTextResults() async throws {
+    let directory = try temporaryDirectory()
+    let storage = try HNSWStorageProvider(directoryURL: directory, dimension: 3)
+    let appleRecipe = VecturaDocument(text: "apple pie recipe", embedding: [1, 0, 0])
+    let appleLaptop = VecturaDocument(text: "apple laptop", embedding: [0, 1, 0])
+    let banana = VecturaDocument(text: "banana smoothie", embedding: [0, 0, 1])
+
+    try await storage.saveDocuments([appleRecipe, appleLaptop, banana])
+
+    let results = try await storage.searchText(query: "apple recipe", topK: 2) ?? []
+
+    #expect(results.map(\.id) == [appleRecipe.id, appleLaptop.id])
+    #expect(results.allSatisfy { $0.score > 0 })
+
+    try await storage.deleteDocument(withID: appleRecipe.id)
+
+    let afterDelete = try await storage.searchText(query: "apple recipe", topK: 2) ?? []
+    #expect(afterDelete.map(\.id) == [appleLaptop.id])
+  }
+
+  @Test("plugs into VecturaKit indexed text search")
+  func plugsIntoVecturaKitIndexedTextSearch() async throws {
+    let directory = try temporaryDirectory()
+    let storage = try HNSWStorageProvider(
+      directoryURL: directory.appendingPathComponent("hnsw"),
+      dimension: 3
+    )
+    let embedder = DictionaryEmbedder(
+      dimension: 3,
+      embeddings: [
+        "apple pie recipe": [1, 0, 0],
+        "apple laptop": [0, 1, 0],
+        "banana smoothie": [0, 0, 1],
+        "apple recipe": [1, 0, 0],
+      ]
+    )
+    let config = try VecturaConfig(
+      name: "hnsw-text-test",
+      directoryURL: directory.appendingPathComponent("vectura"),
+      dimension: 3,
+      searchOptions: .init(hybridWeight: 0),
+      memoryStrategy: .indexed(candidateMultiplier: 4)
+    )
+
+    let vectura = try await VecturaKit(
+      config: config,
+      embedder: embedder,
+      storageProvider: storage
+    )
+
+    _ = try await vectura.addDocuments(texts: ["apple pie recipe", "apple laptop", "banana smoothie"])
+
+    let results = try await vectura.search(
+      query: .text("apple recipe"),
+      numResults: 1,
+      threshold: nil
+    )
+
+    #expect(results.first?.text == "apple pie recipe")
+  }
+
   @Test("delete removes active document from candidate results")
   func deleteRemovesActiveDocumentFromCandidates() async throws {
     let directory = try temporaryDirectory()
