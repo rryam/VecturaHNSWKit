@@ -191,7 +191,7 @@ public actor HNSWStorageProvider: IndexedVecturaStorage {
       try index.add(documentID: document.id, vector: document.embedding)
       try await compactIndexIfNeeded()
     } catch {
-      try? index.rebuild(documents: store.loadActiveDocuments())
+      try recoverIndexAfterMutationFailure(operation: "saveDocument", originalError: error)
       throw error
     }
   }
@@ -210,7 +210,7 @@ public actor HNSWStorageProvider: IndexedVecturaStorage {
       }
       try await compactIndexIfNeeded()
     } catch {
-      try? index.rebuild(documents: store.loadActiveDocuments())
+      try recoverIndexAfterMutationFailure(operation: "saveDocuments", originalError: error)
       throw error
     }
   }
@@ -302,6 +302,18 @@ public actor HNSWStorageProvider: IndexedVecturaStorage {
     }
 
     try await compactIndex()
+  }
+
+  private func recoverIndexAfterMutationFailure(operation: String, originalError: Error) throws {
+    do {
+      try index.rebuild(documents: store.loadActiveDocuments())
+    } catch {
+      throw HNSWStorageError.indexRecoveryFailed(
+        operation: operation,
+        originalError: String(describing: originalError),
+        rebuildError: String(describing: error)
+      )
+    }
   }
 
   private func validate(_ document: VecturaDocument) throws {
