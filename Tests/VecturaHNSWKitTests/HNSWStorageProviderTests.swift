@@ -1,4 +1,5 @@
 import Foundation
+import SQLite3
 import Testing
 import VecturaHNSWKit
 import VecturaKit
@@ -149,6 +150,59 @@ struct HNSWStorageProviderTests {
     #expect((afterCompact.snapshotBytes ?? 0) > 0)
   }
 
+  @Test("failed rebuild preserves existing in-memory index")
+  func failedRebuildPreservesExistingInMemoryIndex() async throws {
+    let directory = try temporaryDirectory()
+    let config = try HNSWConfig(exactSearchThreshold: 0)
+    let storage = try HNSWStorageProvider(directoryURL: directory, dimension: 3, config: config)
+    let apple = VecturaDocument(text: "apple", embedding: [1, 0, 0])
+    let banana = VecturaDocument(text: "banana", embedding: [0, 1, 0])
+
+    try await storage.saveDocuments([apple, banana])
+    try corruptEmbedding(for: banana.id, in: directory, embedding: [0, 1])
+
+    await #expect(throws: HNSWStorageError.invalidDimension(expected: 3, actual: 2)) {
+      try await storage.rebuildIndex()
+    }
+
+    let candidates = try await storage.searchVectorCandidates(
+      queryEmbedding: [0, 1, 0],
+      topK: 1,
+      prefilterSize: 1
+    )
+
+    #expect(candidates?.first == banana.id)
+  }
+
+  @Test("mutation recovery surfaces failed rebuild")
+  func mutationRecoverySurfacesFailedRebuild() async throws {
+    let directory = try temporaryDirectory()
+    let config = try HNSWConfig(
+      exactSearchThreshold: 0,
+      automaticCompactionDeletedRatio: 0,
+      automaticCompactionMinimumDeletedCount: 1
+    )
+    let storage = try HNSWStorageProvider(directoryURL: directory, dimension: 3, config: config)
+    let apple = VecturaDocument(text: "apple", embedding: [1, 0, 0])
+    let id = UUID()
+    let banana = VecturaDocument(id: id, text: "banana", embedding: [0, 1, 0])
+    let updatedBanana = VecturaDocument(id: id, text: "updated banana", embedding: [0, 0, 1])
+
+    try await storage.saveDocuments([apple, banana])
+    try corruptEmbedding(for: apple.id, in: directory, embedding: [1, 0])
+
+    var surfacedRecoveryFailure = false
+    do {
+      try await storage.saveDocument(updatedBanana)
+    } catch HNSWStorageError.indexRecoveryFailed(let operation, let originalError, let rebuildError) {
+      surfacedRecoveryFailure = operation == "saveDocument"
+        && originalError.contains("invalidDimension")
+        && rebuildError.contains("invalidDimension")
+    }
+
+    #expect(surfacedRecoveryFailure)
+  }
+
   @Test("validated recovery rebuilds stale snapshot")
   func validatedRecoveryRebuildsStaleSnapshot() async throws {
     let directory = try temporaryDirectory()
@@ -293,6 +347,56 @@ struct HNSWStorageProviderTests {
       .appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     return url
+  }
+
+  private func corruptEmbedding(for id: UUID, in directory: URL, embedding: [Float]) throws {
+    var database: OpaquePointer?
+    let databaseURL = directory.appendingPathComponent("documents.sqlite3")
+    guard sqlite3_open_v2(databaseURL.path, &database, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK else {
+      throw HNSWStorageError.sqlite(Self.sqliteMessage(from: database))
+    }
+    defer { sqlite3_close(database) }
+
+    var statement: OpaquePointer?
+    guard sqlite3_prepare_v2(
+      database,
+      "UPDATE documents SET embedding = ? WHERE id = ?",
+      -1,
+      &statement,
+      nil
+    ) == SQLITE_OK else {
+      throw HNSWStorageError.sqlite(Self.sqliteMessage(from: database))
+    }
+    defer { sqlite3_finalize(statement) }
+
+    let embeddingData = embedding.withUnsafeBufferPointer { Data(buffer: $0) }
+    _ = embeddingData.withUnsafeBytes { buffer in
+      sqlite3_bind_blob(
+        statement,
+        1,
+        buffer.baseAddress,
+        Int32(buffer.count),
+        unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+      )
+    }
+    sqlite3_bind_text(
+      statement,
+      2,
+      id.uuidString,
+      -1,
+      unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+    )
+
+    guard sqlite3_step(statement) == SQLITE_DONE else {
+      throw HNSWStorageError.sqlite(Self.sqliteMessage(from: database))
+    }
+  }
+
+  private static func sqliteMessage(from database: OpaquePointer?) -> String {
+    guard let database, let message = sqlite3_errmsg(database) else {
+      return "unknown SQLite failure"
+    }
+    return String(cString: message)
   }
 }
 

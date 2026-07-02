@@ -117,18 +117,14 @@ final class HNSWIndex {
   }
 
   func rebuild(documents: [VecturaDocument]) throws {
-    nodes.removeAll(keepingCapacity: true)
-    vectors.removeAll(keepingCapacity: true)
-    visitedMarks.removeAll(keepingCapacity: true)
-    activeDocumentNodes.removeAll(keepingCapacity: true)
-    entryPoint = nil
-    maxLayer = -1
-    rng = SeededGenerator(seed: config.randomSeed)
-    reserveCapacity(additionalNodeCount: documents.count)
+    let rebuilt = try HNSWIndex(dimension: dimension, config: config)
+    rebuilt.reserveCapacity(additionalNodeCount: documents.count)
 
-    for document in orderedForBatchInsertion(documents) {
-      try add(documentID: document.id, vector: document.embedding)
+    for document in rebuilt.orderedForBatchInsertion(documents) {
+      try rebuilt.add(documentID: document.id, vector: document.embedding)
     }
+
+    replaceState(with: rebuilt)
   }
 
   func snapshot(documentRevision: Int64) -> HNSWIndexSnapshot {
@@ -581,6 +577,17 @@ final class HNSWIndex {
       ordered.swapAt(index, swapIndex)
     }
     return ordered
+  }
+
+  private func replaceState(with rebuilt: HNSWIndex) {
+    rng = rebuilt.rng
+    nodes = rebuilt.nodes
+    vectors = rebuilt.vectors
+    visitedMarks = rebuilt.visitedMarks
+    visitedGeneration = rebuilt.visitedGeneration
+    activeDocumentNodes = rebuilt.activeDocumentNodes
+    entryPoint = rebuilt.entryPoint
+    maxLayer = rebuilt.maxLayer
   }
 
   private func isSelectableNeighbor(_ nodeID: Int, layer: Int, queryNodeID: Int) -> Bool {
