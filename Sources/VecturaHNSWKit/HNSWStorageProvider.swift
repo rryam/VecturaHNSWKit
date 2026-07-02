@@ -263,6 +263,13 @@ public actor HNSWStorageProvider: IndexedVecturaStorage {
     )
   }
 
+  public func searchText(
+    query: String,
+    topK: Int
+  ) async throws -> [VecturaSearchResult]? {
+    try store.searchText(query: query, topK: topK)
+  }
+
   /// Searches the HNSW graph directly and returns document IDs without loading documents.
   ///
   /// This is useful for measuring pure index lookup cost or for callers that want

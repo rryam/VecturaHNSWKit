@@ -37,6 +37,7 @@ final class SQLiteDocumentStore {
     try withTransaction {
       try upsert(document)
       try incrementDocumentRevision()
+      try markTextIndexCurrent()
     }
   }
 
@@ -50,6 +51,7 @@ final class SQLiteDocumentStore {
         try upsert(document)
       }
       try incrementDocumentRevision()
+      try markTextIndexCurrent()
     }
   }
 
@@ -61,7 +63,9 @@ final class SQLiteDocumentStore {
       sqlite3_bind_text(statement, 1, id.uuidString, -1, sqliteTransient)
       try stepDone(statement)
       if sqlite3_changes(database) > 0 {
+        try deleteTextIndexEntry(id: id)
         try incrementDocumentRevision()
+        try markTextIndexCurrent()
       }
     }
   }
@@ -180,6 +184,52 @@ final class SQLiteDocumentStore {
     return sqlite3_step(statement) == SQLITE_ROW
   }
 
+  func searchText(query: String, topK: Int) throws -> [VecturaSearchResult] {
+    guard topK > 0, let ftsQuery = Self.ftsQuery(for: query) else {
+      return []
+    }
+
+    let statement = try prepare(
+      """
+      SELECT id, text, created_at, -bm25(document_text_index) AS score
+      FROM document_text_index
+      WHERE document_text_index MATCH ?
+      ORDER BY bm25(document_text_index), rowid
+      LIMIT ?
+      """
+    )
+    defer { sqlite3_finalize(statement) }
+
+    sqlite3_bind_text(statement, 1, ftsQuery, -1, sqliteTransient)
+    sqlite3_bind_int64(statement, 2, sqlite3_int64(topK))
+
+    var results: [VecturaSearchResult] = []
+    while true {
+      let status = sqlite3_step(statement)
+      switch status {
+      case SQLITE_ROW:
+        guard let idText = sqlite3_column_text(statement, 0),
+              let textValue = sqlite3_column_text(statement, 1),
+              let id = UUID(uuidString: String(cString: idText)) else {
+          throw HNSWStorageError.sqlite("Failed to decode text search row")
+        }
+
+        results.append(
+          VecturaSearchResult(
+            id: id,
+            text: String(cString: textValue),
+            score: Float(sqlite3_column_double(statement, 3)),
+            createdAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 2))
+          )
+        )
+      case SQLITE_DONE:
+        return results
+      default:
+        throw HNSWStorageError.sqlite(Self.message(from: database))
+      }
+    }
+  }
+
   private func createSchema() throws {
     try execute(
       """
@@ -195,6 +245,17 @@ final class SQLiteDocumentStore {
     try execute("CREATE INDEX IF NOT EXISTS idx_documents_active ON documents(active)")
     try execute(
       """
+      CREATE VIRTUAL TABLE IF NOT EXISTS document_text_index
+      USING fts5(
+        id UNINDEXED,
+        text,
+        created_at UNINDEXED,
+        tokenize = 'unicode61 remove_diacritics 1'
+      )
+      """
+    )
+    try execute(
+      """
       CREATE TABLE IF NOT EXISTS metadata (
         key TEXT PRIMARY KEY NOT NULL,
         value TEXT NOT NULL
@@ -203,6 +264,11 @@ final class SQLiteDocumentStore {
     )
     try setMetadata(key: "dimension", value: String(dimension))
     try setMetadataIfMissing(key: "documentRevision", value: "0")
+    try setMetadataIfMissing(key: "textIndexRevision", value: "-1")
+    if try metadataValue(key: "textIndexRevision") != metadataValue(key: "documentRevision") {
+      try rebuildTextIndex()
+      try markTextIndexCurrent()
+    }
   }
 
   private func setMetadata(key: String, value: String) throws {
@@ -261,6 +327,74 @@ final class SQLiteDocumentStore {
     }
     sqlite3_bind_double(statement, 4, document.createdAt.timeIntervalSince1970)
     try stepDone(statement)
+    try upsertTextIndexEntry(for: document)
+  }
+
+  private func metadataValue(key: String) throws -> String? {
+    let statement = try prepare("SELECT value FROM metadata WHERE key = ? LIMIT 1")
+    defer { sqlite3_finalize(statement) }
+
+    sqlite3_bind_text(statement, 1, key, -1, sqliteTransient)
+    guard sqlite3_step(statement) == SQLITE_ROW, let value = sqlite3_column_text(statement, 0) else {
+      return nil
+    }
+    return String(cString: value)
+  }
+
+  private func markTextIndexCurrent() throws {
+    let revision = try currentDocumentRevision()
+    try setMetadata(key: "textIndexRevision", value: String(revision))
+  }
+
+  private func rebuildTextIndex() throws {
+    try withTransaction {
+      try execute("DELETE FROM document_text_index")
+      let documents = try loadActiveDocuments()
+      for document in documents {
+        try insertTextIndexEntry(for: document)
+      }
+    }
+  }
+
+  private func upsertTextIndexEntry(for document: VecturaDocument) throws {
+    try deleteTextIndexEntry(id: document.id)
+    try insertTextIndexEntry(for: document)
+  }
+
+  private func insertTextIndexEntry(for document: VecturaDocument) throws {
+    let rowID = try documentRowID(id: document.id)
+    let statement = try prepare(
+      """
+      INSERT INTO document_text_index(rowid, id, text, created_at)
+      VALUES(?, ?, ?, ?)
+      """
+    )
+    defer { sqlite3_finalize(statement) }
+
+    sqlite3_bind_int64(statement, 1, sqlite3_int64(rowID))
+    sqlite3_bind_text(statement, 2, document.id.uuidString, -1, sqliteTransient)
+    sqlite3_bind_text(statement, 3, document.text, -1, sqliteTransient)
+    sqlite3_bind_double(statement, 4, document.createdAt.timeIntervalSince1970)
+    try stepDone(statement)
+  }
+
+  private func deleteTextIndexEntry(id: UUID) throws {
+    let statement = try prepare("DELETE FROM document_text_index WHERE id = ?")
+    defer { sqlite3_finalize(statement) }
+
+    sqlite3_bind_text(statement, 1, id.uuidString, -1, sqliteTransient)
+    try stepDone(statement)
+  }
+
+  private func documentRowID(id: UUID) throws -> Int64 {
+    let statement = try prepare("SELECT rowid FROM documents WHERE id = ? LIMIT 1")
+    defer { sqlite3_finalize(statement) }
+
+    sqlite3_bind_text(statement, 1, id.uuidString, -1, sqliteTransient)
+    guard sqlite3_step(statement) == SQLITE_ROW else {
+      throw HNSWStorageError.sqlite("Failed to find document rowid")
+    }
+    return sqlite3_column_int64(statement, 0)
   }
 
   private func validate(_ document: VecturaDocument) throws {
@@ -386,5 +520,21 @@ final class SQLiteDocumentStore {
       return "unknown SQLite failure"
     }
     return String(cString: message)
+  }
+
+  private static func ftsQuery(for query: String) -> String? {
+    let terms = query
+      .lowercased()
+      .folding(options: .diacriticInsensitive, locale: .current)
+      .components(separatedBy: CharacterSet.alphanumerics.inverted)
+      .filter { !$0.isEmpty }
+
+    guard !terms.isEmpty else {
+      return nil
+    }
+
+    return terms
+      .map { "\"\($0.replacingOccurrences(of: "\"", with: "\"\""))\"" }
+      .joined(separator: " OR ")
   }
 }
