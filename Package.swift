@@ -22,7 +22,7 @@ let package = Package(
     ),
   ],
   dependencies: [
-    .package(url: "https://github.com/rryam/VecturaKit.git", from: "6.1.0"),
+    .package(url: "https://github.com/rryam/VecturaKit.git", from: "6.2.0"),
   ],
   targets: [
     .target(

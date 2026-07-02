@@ -92,10 +92,11 @@ struct HNSWStorageProviderTests {
   @Test("plugs into VecturaKit indexed text search")
   func plugsIntoVecturaKitIndexedTextSearch() async throws {
     let directory = try temporaryDirectory()
-    let storage = try HNSWStorageProvider(
+    let provider = try HNSWStorageProvider(
       directoryURL: directory.appendingPathComponent("hnsw"),
       dimension: 3
     )
+    let storage = TextSearchSpyStorage(wrapping: provider)
     let embedder = DictionaryEmbedder(
       dimension: 3,
       embeddings: [
@@ -128,6 +129,12 @@ struct HNSWStorageProviderTests {
     )
 
     #expect(results.first?.text == "apple pie recipe")
+
+    // Guard against the storage hook silently unbinding (e.g. a VecturaKit
+    // resolution without the searchText requirement): the result must come
+    // from the storage-level text index, not the in-memory BM25 fallback.
+    let searchTextCalls = await storage.searchTextCallCount
+    #expect(searchTextCalls > 0)
   }
 
   @Test("delete removes active document from candidate results")
@@ -459,6 +466,79 @@ struct HNSWStorageProviderTests {
       return "unknown SQLite failure"
     }
     return String(cString: message)
+  }
+}
+
+/// Delegates every storage operation to a wrapped ``HNSWStorageProvider`` while
+/// counting `searchText` invocations, so tests can assert that VecturaKit's text
+/// search actually routes through the storage hook instead of the in-memory fallback.
+private actor TextSearchSpyStorage: IndexedVecturaStorage {
+  private let wrapped: HNSWStorageProvider
+  private(set) var searchTextCallCount = 0
+
+  init(wrapping wrapped: HNSWStorageProvider) {
+    self.wrapped = wrapped
+  }
+
+  func createStorageDirectoryIfNeeded() async throws {
+    try await wrapped.createStorageDirectoryIfNeeded()
+  }
+
+  func loadDocuments() async throws -> [VecturaDocument] {
+    try await wrapped.loadDocuments()
+  }
+
+  func saveDocument(_ document: VecturaDocument) async throws {
+    try await wrapped.saveDocument(document)
+  }
+
+  func saveDocuments(_ documents: [VecturaDocument]) async throws {
+    try await wrapped.saveDocuments(documents)
+  }
+
+  func deleteDocument(withID id: UUID) async throws {
+    try await wrapped.deleteDocument(withID: id)
+  }
+
+  func updateDocument(_ document: VecturaDocument) async throws {
+    try await wrapped.updateDocument(document)
+  }
+
+  func getTotalDocumentCount() async throws -> Int {
+    try await wrapped.getTotalDocumentCount()
+  }
+
+  func getDocument(id: UUID) async throws -> VecturaDocument? {
+    try await wrapped.getDocument(id: id)
+  }
+
+  func documentExists(id: UUID) async throws -> Bool {
+    try await wrapped.documentExists(id: id)
+  }
+
+  func loadDocuments(offset: Int, limit: Int) async throws -> [VecturaDocument] {
+    try await wrapped.loadDocuments(offset: offset, limit: limit)
+  }
+
+  func loadDocuments(ids: [UUID]) async throws -> [UUID: VecturaDocument] {
+    try await wrapped.loadDocuments(ids: ids)
+  }
+
+  func searchVectorCandidates(
+    queryEmbedding: [Float],
+    topK: Int,
+    prefilterSize: Int
+  ) async throws -> [UUID]? {
+    try await wrapped.searchVectorCandidates(
+      queryEmbedding: queryEmbedding,
+      topK: topK,
+      prefilterSize: prefilterSize
+    )
+  }
+
+  func searchText(query: String, topK: Int) async throws -> [VecturaSearchResult]? {
+    searchTextCallCount += 1
+    return try await wrapped.searchText(query: query, topK: topK)
   }
 }
 
