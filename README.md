@@ -50,6 +50,7 @@ VecturaHNSWKit.
 - Accelerate-backed vector scoring for graph construction and search
 - `IndexedVecturaStorage` conformance
 - SQLite-backed document persistence
+- SQLite FTS-backed text search through VecturaKit's indexed storage hook
 - binary HNSW index snapshots with SQLite revision validation
 - startup recovery policies
 - tombstone deletes with automatic compaction controls
@@ -63,7 +64,7 @@ Add VecturaHNSWKit to your package:
 
 ```swift
 dependencies: [
-  .package(url: "https://github.com/rryam/VecturaHNSWKit.git", from: "1.0.0"),
+  .package(url: "https://github.com/rryam/VecturaHNSWKit.git", from: "1.1.0"),
 ]
 ```
 
